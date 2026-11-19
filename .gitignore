@@ -1,0 +1,13 @@
+# Signing keys and local secrets — NEVER commit
+.local/
+local.properties
+
+# Build outputs
+.gradle/
+.kotlin/
+app/build/
+build/
+*.apk
+
+# Logs
+*.log
