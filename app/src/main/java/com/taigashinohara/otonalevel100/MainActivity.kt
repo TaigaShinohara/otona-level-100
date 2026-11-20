@@ -3,12 +3,7 @@ package com.taigashinohara.otonalevel100
 import android.animation.ValueAnimator
 import android.app.Activity
 import android.content.res.Configuration
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.RadialGradient
-import android.graphics.RenderEffect
-import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
@@ -27,7 +22,7 @@ import android.widget.TextView
 import kotlin.random.Random
 
 /**
- * Otona Level 100 v0.3.0.
+ * Otona Level 100 v0.4.0.
  * v0.2.0: UX review fixes (bar animation, gold reserved for level-up, session
  * persistence, shuffled choices, graduation box condition, due-review entry,
  * four font tiers, category mini bars, decluttered home, fixed next footer).
@@ -44,88 +39,91 @@ import kotlin.random.Random
  * approved): status-bar insets in both modes, category bars show the solved
  * ratio in per-category accent colours with glyph chips, the secondary button
  * no longer reads as disabled, tint/accent points added against monotony.
- * v0.3.0: Simple Glass applied app-wide (skill v1.1 canonical values):
- * gradient foundation + up to 3 blurred light blobs, reading-glass surfaces
- * (white 62%->54% light / 19%->13% dark) with specular edge highlight,
- * gentle top-to-bottom gradients on every surface, solid navy for the main
- * action, dark-mode values prepared independently. Colour roles are unchanged
- * from ART_DIRECTION (navy = the star, gold = level-up only).
+ * v0.3.0: Simple Glass applied app-wide (skill v1.1 canonical values).
+ * v0.4.0: full visual redesign to a Duolingo-style UI (user's direction;
+ * ART_DIRECTION v2.0 supersedes the glass direction for this app): flat vivid
+ * colours, chunky 3D-edge buttons, green unit-header home card, coloured
+ * category units, green/red tint feedback banners, night-theme dark mode.
+ * Logic (XP, Leitner, sessions) is unchanged from v0.3.3.
  */
 class MainActivity : Activity() {
 
-    // ---------- Simple Glass palette (roles fixed by ART_DIRECTION) ----------
+    // ---------- Duolingo-style palette (v0.4.0, ART_DIRECTION v2.0) ----------
+    // Vivid flat colours, chunky shapes, bold type. Dark follows Duolingo's
+    // night theme (deep blue-grey). Colour roles: green = primary / progress /
+    // correct, blue = selection & info, yellow = level-up only, red tints =
+    // "not quite" feedback (informative, never shaming).
     private inner class Palette(dark: Boolean) {
-        val bgGrad: IntArray
-        val blobColors: IntArray // argb tints, max 3 lights
-        val glassTop: Int
-        val glassBottom: Int
-        val sheenTop: Int
+        val bgTop: Int
+        val bgBottom: Int
+        val surface: Int
+        val border: Int
+        val track: Int
         val textMain: Int
         val textSub: Int
         val heading: Int
-        val accentTop: Int
-        val accentBottom: Int
-        val accentTextOn = Color.WHITE
-        val tintPill: Int
-        val goldTop: Int
-        val goldBottom: Int
-        val goldText: Int
-        val tintStrong: Int
-        /** Per-category accents (v0.3.1 colour-coding; v0.3.2: used only for
-         *  functional points — glyph, dot, bar fill — never as a surface fill.
-         *  categoryTints is kept as the light-tint reference for future use). */
-        val categoryTints: List<Int>
-        val categoryAccents: List<Int>
-        val wrongBg = Color.rgb(0x6E, 0x6E, 0x6E)
+        val green = Color.rgb(0x58, 0xCC, 0x02)
+        val greenDark = Color.rgb(0x58, 0xA7, 0x00)
+        val greenTextOn = Color.WHITE
+        val blue = Color.rgb(0x1C, 0xB0, 0xF6)
+        val tabSelBg: Int
+        val tabSelText: Int
+        val yellow = Color.rgb(0xFF, 0xC8, 0x00)
+        val yellowText = Color.rgb(0x7C, 0x5E, 0x00)
+        val correctBg: Int
+        val correctBorder: Int
+        val correctText: Int
+        val wrongBgC: Int
+        val wrongBorder: Int
+        val wrongText: Int
+        val chipBg: Int
+        val chipText: Int
+        /** Bright per-category fills (unit colours). */
+        val categoryColors: List<Int> = listOf(
+            Color.rgb(0x1C, 0xB0, 0xF6), // 敬語 blue
+            Color.rgb(0xFF, 0x86, 0xD0), // マナー pink
+            Color.rgb(0xA5, 0x60, 0xF5), // 漢字 purple
+            Color.rgb(0xFF, 0x96, 0x00), // 標識 orange
+            Color.rgb(0x58, 0xCC, 0x02)) // 社会 green
         init {
             if (dark) {
-                bgGrad = intArrayOf(
-                    Color.rgb(0x13, 0x18, 0x2E), Color.rgb(0x15, 0x1D, 0x36), Color.rgb(0x0E, 0x13, 0x24))
-                blobColors = intArrayOf(
-                    Color.argb(84, 96, 120, 190), Color.argb(34, 201, 162, 39), Color.argb(58, 96, 138, 205))
-                glassTop = Color.argb(48, 255, 255, 255)    // white 19%
-                glassBottom = Color.argb(33, 255, 255, 255) // white 13%
-                sheenTop = Color.argb(97, 255, 255, 255)    // white 38%
-                textMain = Color.rgb(0xF2, 0xEF, 0xE7)
-                textSub = Color.rgb(0xD8, 0xCF, 0xC2)       // skill canonical (dark sub)
-                heading = Color.rgb(0xA9, 0xBC, 0xEF)
-                accentTop = Color.rgb(0x54, 0x67, 0x9F)
-                accentBottom = Color.rgb(0x3A, 0x4E, 0x86)
-                tintPill = Color.argb(48, 255, 255, 255)
-                goldTop = Color.rgb(0xD9, 0xBA, 0x55)
-                goldBottom = Color.rgb(0xBE, 0x98, 0x23)
-                goldText = Color.rgb(0xE3, 0xC5, 0x65)
-                tintStrong = Color.rgb(0x33, 0x43, 0x6F)
-                categoryTints = listOf(
-                    Color.rgb(0x2B, 0x35, 0x57), Color.rgb(0x40, 0x2E, 0x38), Color.rgb(0x2A, 0x3B, 0x31),
-                    Color.rgb(0x40, 0x38, 0x24), Color.rgb(0x26, 0x39, 0x4A))
-                categoryAccents = listOf(
-                    Color.rgb(0x8F, 0xA3, 0xDC), Color.rgb(0xD8, 0x9A, 0xAC), Color.rgb(0x93, 0xC4, 0xA6),
-                    Color.rgb(0xE0, 0xBE, 0x6A), Color.rgb(0x8F, 0xBC, 0xD9))
+                bgTop = Color.rgb(0x13, 0x1F, 0x24)
+                bgBottom = Color.rgb(0x0E, 0x18, 0x1C)
+                surface = Color.rgb(0x1F, 0x2A, 0x30)
+                border = Color.rgb(0x37, 0x46, 0x4F)
+                track = Color.rgb(0x37, 0x46, 0x4F)
+                textMain = Color.rgb(0xF1, 0xF7, 0xFB)
+                textSub = Color.rgb(0xA8, 0xB6, 0xBC)
+                heading = Color.rgb(0xF1, 0xF7, 0xFB)
+                tabSelBg = Color.rgb(0x1E, 0x3A, 0x4C)
+                tabSelText = Color.rgb(0x7C, 0xD4, 0xFC)
+                correctBg = Color.rgb(0x1D, 0x33, 0x27)
+                correctBorder = green
+                correctText = Color.rgb(0x8C, 0xE9, 0x9A)
+                wrongBgC = Color.rgb(0x3D, 0x24, 0x28)
+                wrongBorder = Color.rgb(0xFF, 0x4B, 0x4B)
+                wrongText = Color.rgb(0xFF, 0xA8, 0xB8)
+                chipBg = Color.rgb(0x1E, 0x3A, 0x4C)
+                chipText = Color.rgb(0x7C, 0xD4, 0xFC)
             } else {
-                bgGrad = intArrayOf(
-                    Color.rgb(0xFF, 0xFB, 0xF2), Color.rgb(0xF6, 0xF1, 0xE7), Color.rgb(0xED, 0xF1, 0xF8))
-                blobColors = intArrayOf(
-                    Color.argb(84, 110, 132, 185), Color.argb(40, 201, 162, 39), Color.argb(56, 130, 165, 215))
-                glassTop = Color.argb(158, 255, 255, 255)    // white 62%
-                glassBottom = Color.argb(138, 255, 255, 255) // white 54%
-                sheenTop = Color.argb(191, 255, 255, 255)    // white 75%
-                textMain = Color.rgb(0x2B, 0x2B, 0x2B)
-                textSub = Color.rgb(0x55, 0x4D, 0x44)        // skill canonical (light sub)
-                heading = Color.rgb(0x1B, 0x2A, 0x52)
-                accentTop = Color.rgb(0x27, 0x39, 0x66)
-                accentBottom = Color.rgb(0x18, 0x26, 0x4A)
-                tintPill = Color.rgb(0xE1, 0xE8, 0xF6)
-                goldTop = Color.rgb(0xD9, 0xBA, 0x55)
-                goldBottom = Color.rgb(0xBE, 0x98, 0x23)
-                goldText = Color.rgb(0x7A, 0x5C, 0x00)
-                tintStrong = Color.rgb(0xD7, 0xE1, 0xF4)
-                categoryTints = listOf(
-                    Color.rgb(0xE3, 0xE7, 0xF7), Color.rgb(0xF7, 0xE8, 0xEC), Color.rgb(0xE6, 0xEF, 0xE4),
-                    Color.rgb(0xF7, 0xEF, 0xDA), Color.rgb(0xE2, 0xEF, 0xF7))
-                categoryAccents = listOf(
-                    Color.rgb(0x54, 0x67, 0x9F), Color.rgb(0xB8, 0x5C, 0x74), Color.rgb(0x5E, 0x8F, 0x74),
-                    Color.rgb(0x9A, 0x74, 0x14), Color.rgb(0x4E, 0x84, 0xA8))
+                bgTop = Color.WHITE
+                bgBottom = Color.rgb(0xF7, 0xF7, 0xF7)
+                surface = Color.WHITE
+                border = Color.rgb(0xE5, 0xE5, 0xE5)
+                track = Color.rgb(0xE5, 0xE5, 0xE5)
+                textMain = Color.rgb(0x3C, 0x3C, 0x3C)
+                textSub = Color.rgb(0x77, 0x77, 0x77)
+                heading = Color.rgb(0x3C, 0x3C, 0x3C)
+                tabSelBg = Color.rgb(0xDD, 0xF4, 0xFF)
+                tabSelText = Color.rgb(0x18, 0x99, 0xD6)
+                correctBg = Color.rgb(0xD7, 0xFF, 0xB8)
+                correctBorder = green
+                correctText = Color.rgb(0x58, 0xA7, 0x00)
+                wrongBgC = Color.rgb(0xFF, 0xDF, 0xE0)
+                wrongBorder = Color.rgb(0xFF, 0x4B, 0x4B)
+                wrongText = Color.rgb(0xEA, 0x2B, 0x2B)
+                chipBg = Color.rgb(0xDD, 0xF4, 0xFF)
+                chipText = Color.rgb(0x18, 0x99, 0xD6)
             }
         }
     }
@@ -170,11 +168,11 @@ class MainActivity : Activity() {
         content = FrameLayout(this)
         column.addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
-        // Floating reading-glass tab bar (parts.md: tab bar = reading glass).
+        // Bottom tab bar: white card; the selected tab gets a blue tint pill.
         val tabBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(dp(8), dp(6), dp(8), dp(6))
-            background = glassDrawable(dp(24).toFloat())
+            background = cardDrawable(dp(24).toFloat())
         }
         val names = listOf("ホーム", "復習", "カテゴリ")
         tabButtons = names.mapIndexed { i, name ->
@@ -218,64 +216,52 @@ class MainActivity : Activity() {
         }
     }
 
-    /** Standard foundation (quality.md §1): 3-point gradient + up to 3 blurred light blobs. */
+    /** Flat foundation: near-white (light) / deep blue-grey (dark night). */
     private fun buildBackground(): View {
         val frame = FrameLayout(this)
         val gradient = View(this).apply {
-            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, pal.bgGrad)
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(pal.bgTop, pal.bgBottom))
         }
         frame.addView(gradient, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        val blobs = object : View(this) {
-            override fun onDraw(canvas: Canvas) {
-                super.onDraw(canvas)
-                val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-                val r = dp(300).toFloat()
-                // Template: top-left = main colour, bottom-right = sub colour, bottom-centre = third.
-                val spots = listOf(
-                    Triple(-r * 0.25f, -r * 0.3f, 0),
-                    Triple(width - r * 0.7f, height - r * 0.75f, 1),
-                    Triple(width * 0.5f - r / 2, height - r * 0.55f, 2)
-                )
-                for ((x, y, idx) in spots) {
-                    val c = pal.blobColors[idx]
-                    paint.shader = RadialGradient(
-                        x + r / 2, y + r / 2, r / 2,
-                        c, Color.argb(0, Color.red(c), Color.green(c), Color.blue(c)),
-                        Shader.TileMode.CLAMP)
-                    canvas.drawCircle(x + r / 2, y + r / 2, r / 2, paint)
-                }
-            }
-        }
-        if (Build.VERSION.SDK_INT >= 31) {
-            // Spec is 60-80dp; RenderEffect takes physical px, so convert (IR2-8).
-            val blurPx = dp(70).toFloat()
-            blobs.setRenderEffect(RenderEffect.createBlurEffect(blurPx, blurPx, Shader.TileMode.CLAMP))
-        }
-        frame.addView(blobs, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         return frame
     }
 
-    /** Reading-glass surface: white gradient (62%->54% / 19%->13%) + specular top sheen. */
-    private fun glassDrawable(radius: Float): LayerDrawable {
-        val glass = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-            intArrayOf(pal.glassTop, pal.glassBottom)).apply { cornerRadius = radius }
-        val sheen = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-            intArrayOf(pal.sheenTop, Color.argb(0, 255, 255, 255))).apply { cornerRadius = radius }
-        return LayerDrawable(arrayOf(glass, sheen))
-    }
+    /** Duolingo-style card: flat surface, 2dp border, generous radius. */
+    private fun cardDrawable(radius: Float): GradientDrawable =
+        GradientDrawable().apply {
+            cornerRadius = radius
+            setColor(pal.surface)
+            setStroke(dp(2), pal.border)
+        }
 
-    /** Circular reading-glass surface (v0.3.2: chips are glass; colour lives in the glyph, not the fill). */
-    private fun glassOval(): GradientDrawable = GradientDrawable(
-        GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(pal.glassTop, pal.glassBottom)
-    ).apply {
+    /** Filled circle in a flat colour (category unit icon). */
+    private fun circleDrawable(color: Int): GradientDrawable = GradientDrawable().apply {
         shape = GradientDrawable.OVAL
-        setStroke(dp(1), pal.sheenTop)
+        setColor(color)
     }
 
-    /** Solid role-colour surface with the gentle gradient (white +8% -> black -4%). */
-    private fun accentDrawable(radius: Float, top: Int = pal.accentTop, bottom: Int = pal.accentBottom): GradientDrawable =
+    /**
+     * Chunky 3D button face: the main colour sits on a darker bottom edge
+     * (5dp), which is the Duolingo signature. Pressed state drops the edge.
+     */
+    private fun chunkyDrawable(radius: Float, top: Int, edge: Int, stroke: Int? = null): LayerDrawable {
+        val bottom = GradientDrawable().apply { cornerRadius = radius; setColor(edge) }
+        val face = GradientDrawable().apply {
+            cornerRadius = radius; setColor(top)
+            if (stroke != null) setStroke(dp(2), stroke)
+        }
+        return LayerDrawable(arrayOf(bottom, face)).apply {
+            setLayerInset(1, 0, 0, 0, dp(5))
+        }
+    }
+
+    private fun chunkyPressed(radius: Float, top: Int): GradientDrawable =
+        GradientDrawable().apply { cornerRadius = radius; setColor(top) }
+
+    /** Flat solid fill (progress bars, pills). */
+    private fun accentDrawable(radius: Float, top: Int, bottom: Int = top): GradientDrawable =
         GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(top, bottom))
             .apply { cornerRadius = radius }
 
@@ -307,10 +293,10 @@ class MainActivity : Activity() {
         setTabsEnabled(true)
         tabButtons.forEachIndexed { i, b ->
             val selected = i == index
-            b.setTextColor(if (selected) navy else grey)
+            b.setTextColor(if (selected) pal.tabSelText else grey)
             b.typeface = if (selected) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
             b.background = if (selected) GradientDrawable().apply {
-                cornerRadius = dp(20).toFloat(); setColor(pal.tintPill)
+                cornerRadius = dp(20).toFloat(); setColor(pal.tabSelBg)
             } else null
         }
         val screen = when (index) {
@@ -327,9 +313,17 @@ class MainActivity : Activity() {
         content.addView(view)
     }
 
-    // ---------- Level bar (parts.md: track = reading glass, progress = solid role colour) ----------
-    private inner class LevelBar(fillTop: Int = pal.accentTop, fillBottom: Int = pal.accentBottom) {
-        val root = FrameLayout(this@MainActivity).apply { background = glassDrawable(dp(10).toFloat()) }
+    // ---------- Level bar: grey track, flat vivid fill, thick and rounded ----------
+    private inner class LevelBar(
+        fillTop: Int = pal.green,
+        fillBottom: Int = pal.green,
+        trackColor: Int = pal.track
+    ) {
+        val root = FrameLayout(this@MainActivity).apply {
+            background = GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat(); setColor(trackColor)
+            }
+        }
         private val fill = View(this@MainActivity).apply {
             background = accentDrawable(dp(10).toFloat(), fillTop, fillBottom)
         }
@@ -363,7 +357,7 @@ class MainActivity : Activity() {
     private fun approxQuestionsLeft(xp: Int): Int =
         (LevelSystem.xpToNextLevel(xp) + LevelSystem.XP_NEW_CORRECT - 1) / LevelSystem.XP_NEW_CORRECT
 
-    // ---------- Home: the level is the star, on a reading-glass panel ----------
+    // ---------- Home: the level is the star, on a green unit-header card ----------
     private fun buildHome(): View {
         val xp = store.xp
         val level = LevelSystem.levelForXp(xp)
@@ -377,23 +371,24 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(dp(20), dp(24), dp(20), dp(20))
         }
+        // Unit-header style: a flat green card, white type, yellow progress fill.
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(dp(24), dp(24), dp(24), dp(20))
-            background = glassDrawable(dp(28).toFloat())
+            background = accentDrawable(dp(24).toFloat(), pal.green)
         }
-        panel.addView(label("オトナレベル100", sizeBody, grey, bold = true))
-        panel.addView(label("Lv. $level", sizeHero, navy, bold = true))
-        panel.addView(label(LevelSystem.titleForLevel(level), sizeHead, navy, bold = true))
-        val bar = LevelBar()
+        panel.addView(label("オトナレベル100", sizeBody, Color.WHITE, bold = true))
+        panel.addView(label("Lv. $level", sizeHero, Color.WHITE, bold = true))
+        panel.addView(label(LevelSystem.titleForLevel(level), sizeHead, Color.WHITE, bold = true))
+        val bar = LevelBar(fillTop = pal.yellow, fillBottom = pal.yellow, trackColor = pal.greenDark)
         bar.describe("レベル$level。次のレベルまであと約${approxQuestionsLeft(xp)}問")
         bar.set(LevelSystem.progressInLevel(xp))
         panel.addView(bar.root)
         if (level >= LevelSystem.MAX_LEVEL) {
-            panel.addView(label("オトナの達人に到達！", sizeBody, pal.goldText, bold = true))
+            panel.addView(label("オトナの達人に到達！", sizeBody, pal.yellow, bold = true))
         } else {
-            panel.addView(label("あと正解 約 ${approxQuestionsLeft(xp)} 問 でレベルアップ", sizeBody, grey))
+            panel.addView(label("あと正解 約 ${approxQuestionsLeft(xp)} 問 でレベルアップ", sizeBody, Color.WHITE))
         }
         col.addView(panel)
 
@@ -425,51 +420,35 @@ class MainActivity : Activity() {
         this.text = text
         textSize = sizeBody
         typeface = Typeface.DEFAULT_BOLD
-        setTextColor(pal.accentTextOn)
-        // Pressed state defined (quality.md §3): pressed = the darker end of the gradient.
+        setTextColor(pal.greenTextOn)
+        // Chunky green button; pressed = the edge drops away (pushed in).
         background = StateListDrawable().apply {
-            addState(intArrayOf(android.R.attr.state_pressed), accentDrawable(dp(28).toFloat(), pal.accentBottom, pal.accentBottom))
-            addState(intArrayOf(), accentDrawable(dp(28).toFloat()))
+            addState(intArrayOf(android.R.attr.state_pressed), chunkyPressed(dp(16).toFloat(), pal.greenDark))
+            addState(intArrayOf(), chunkyDrawable(dp(16).toFloat(), pal.green, pal.greenDark))
         }
         setOnClickListener { onClick() }
     }
 
-    /**
-     * Secondary action (one solid primary per screen, gate 5). v0.3.1: a plain
-     * glass button read as "disabled", so this uses a solid strong tint with a
-     * defined edge and bold heading-coloured text — clearly tappable.
-     */
+    /** Secondary action: white chunky button with a grey edge (Duolingo style). */
     private fun secondaryButton(text: String, onClick: () -> Unit): Button = Button(this).apply {
         this.text = text
         textSize = sizeBody
         typeface = Typeface.DEFAULT_BOLD
         setTextColor(navy)
-        val normal = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-            intArrayOf(pal.tintStrong, pal.tintStrong)).apply {
-            cornerRadius = dp(28).toFloat()
-            setStroke(dp(1), Color.argb(140, Color.red(navy), Color.green(navy), Color.blue(navy)))
-        }
-        val pressed = GradientDrawable().apply {
-            cornerRadius = dp(28).toFloat(); setColor(pal.tintPill)
-            setStroke(dp(1), navy)
-        }
         background = StateListDrawable().apply {
-            addState(intArrayOf(android.R.attr.state_pressed), pressed)
-            addState(intArrayOf(), normal)
+            addState(intArrayOf(android.R.attr.state_pressed), chunkyPressed(dp(16).toFloat(), pal.tabSelBg))
+            addState(intArrayOf(), chunkyDrawable(dp(16).toFloat(), pal.surface, pal.border, stroke = pal.border))
         }
         setOnClickListener { onClick() }
     }
 
-    /** Glass choice/judge button with a defined pressed state (quality.md §3). */
+    /** Choice/judge button: white chunky card style, blue tint when pressed. */
     private fun glassButton(text: String, onClick: () -> Unit): Button = Button(this).apply {
         this.text = text
         textSize = sizeBody
         setTextColor(navy)
-        val normal = glassDrawable(dp(20).toFloat())
-        val pressed = LayerDrawable(arrayOf(
-            GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(pal.tintPill, pal.tintPill)).apply { cornerRadius = dp(20).toFloat() }
-        ))
+        val normal = chunkyDrawable(dp(16).toFloat(), pal.surface, pal.border, stroke = pal.border)
+        val pressed = chunkyPressed(dp(16).toFloat(), pal.tabSelBg)
         background = StateListDrawable().apply {
             addState(intArrayOf(android.R.attr.state_pressed), pressed)
             addState(intArrayOf(), normal)
@@ -581,14 +560,9 @@ class MainActivity : Activity() {
         }
         headerRow.addView(label("${sIndex + 1} / ${sItems.size}", sizeSmall, grey, bold = true))
         val catIdx = Questions.categories.indexOf(q.category).coerceAtLeast(0)
-        val catAccent = pal.categoryAccents[catIdx % pal.categoryAccents.size]
-        val pillText = android.text.SpannableString("● ${q.category}").apply {
-            setSpan(android.text.style.ForegroundColorSpan(catAccent), 0, 1,
-                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        }
-        val catPill = label("", sizeSmall, navy, bold = true).apply {
-            text = pillText
-            background = glassDrawable(dp(12).toFloat())
+        val catColor = pal.categoryColors[catIdx % pal.categoryColors.size]
+        val catPill = label(q.category, sizeSmall, Color.WHITE, bold = true).apply {
+            background = accentDrawable(dp(12).toFloat(), catColor)
             setPadding(dp(10), dp(3), dp(10), dp(3))
         }
         val pillLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -655,7 +629,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setPadding(dp(16), dp(24), dp(16), dp(24))
-            background = glassDrawable(dp(24).toFloat())
+            background = cardDrawable(dp(24).toFloat())
         }
         val frontText = label(q.prompt, sizeHead, navy, bold = true).apply { gravity = Gravity.CENTER }
         val backText = label(q.cardBack, sizeHead, navy, bold = true).apply {
@@ -746,12 +720,18 @@ class MainActivity : Activity() {
                 b.isEnabled = false
                 if (i == item.answerIndex) {
                     b.text = "○ ${item.choices[i]}"
-                    b.setTextColor(pal.accentTextOn)
-                    b.background = accentDrawable(dp(20).toFloat())
+                    b.setTextColor(pal.correctText)
+                    b.background = GradientDrawable().apply {
+                        cornerRadius = dp(16).toFloat(); setColor(pal.correctBg)
+                        setStroke(dp(2), pal.correctBorder)
+                    }
                 } else if (i == sChosen) {
                     b.text = "× ${item.choices[i]}"
-                    b.setTextColor(pal.accentTextOn)
-                    b.background = accentDrawable(dp(20).toFloat(), pal.wrongBg, pal.wrongBg)
+                    b.setTextColor(pal.wrongText)
+                    b.background = GradientDrawable().apply {
+                        cornerRadius = dp(16).toFloat(); setColor(pal.wrongBgC)
+                        setStroke(dp(2), pal.wrongBorder)
+                    }
                 } else {
                     b.alpha = 0.55f
                 }
@@ -803,8 +783,16 @@ class MainActivity : Activity() {
         val q = item.q
         feedback.removeAllViews()
         feedback.visibility = View.VISIBLE
+        // Duolingo-style feedback banner: green tint = correct, red tint = "not
+        // quite" (informative colour, no shaming).
+        feedback.background = GradientDrawable().apply {
+            cornerRadius = dp(16).toFloat()
+            setColor(if (correct) pal.correctBg else pal.wrongBgC)
+        }
+        feedback.setPadding(dp(14), dp(10), dp(14), dp(10))
         val answerText = if (q.type == QType.CARD) q.cardBack else item.choices[item.answerIndex]
-        feedback.addView(label(if (correct) "正解" else "正解は「$answerText」", sizeBody, navy, bold = true))
+        feedback.addView(label(if (correct) "正解" else "正解は「$answerText」", sizeBody,
+            if (correct) pal.correctText else pal.wrongText, bold = true))
         feedback.addView(label(q.explanation, sizeBody, pal.textMain, bodyLeading = true))
         feedback.addView(label("場面：${q.scene}", sizeSmall, grey))
         feedback.addView(label("出典：${q.source}", sizeSmall, grey))
@@ -842,12 +830,12 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(dp(24), dp(24), dp(24), dp(20))
-            background = glassDrawable(dp(28).toFloat())
+            background = cardDrawable(dp(28).toFloat())
         }
         if (leveledUp) {
-            // Gold lives here only (IR-2): solid with the gentle gradient, fixed dark-navy text (IR-3).
-            val pill = label("レベルアップ！ Lv. $newLevel ・ ${LevelSystem.titleForLevel(newLevel)}", sizeBody, Color.rgb(0x1B, 0x2A, 0x52), bold = true).apply {
-                background = accentDrawable(dp(20).toFloat(), pal.goldTop, pal.goldBottom)
+            // Yellow lives here only: the level-up pill (Duolingo achievement yellow).
+            val pill = label("レベルアップ！ Lv. $newLevel ・ ${LevelSystem.titleForLevel(newLevel)}", sizeBody, pal.yellowText, bold = true).apply {
+                background = accentDrawable(dp(20).toFloat(), pal.yellow)
                 setPadding(dp(16), dp(8), dp(16), dp(8))
             }
             panel.addView(pill)
@@ -894,9 +882,9 @@ class MainActivity : Activity() {
         col.addView(label("復習", sizeHead, navy, bold = true))
         // Counts as pale-tint chips: the numbers get a solid accent point on this screen.
         val chipRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        fun countChip(text: String): TextView = label(text, sizeBody, navy, bold = true).apply {
+        fun countChip(text: String): TextView = label(text, sizeBody, pal.chipText, bold = true).apply {
             background = GradientDrawable().apply {
-                cornerRadius = dp(16).toFloat(); setColor(pal.tintStrong)
+                cornerRadius = dp(16).toFloat(); setColor(pal.chipBg)
             }
             setPadding(dp(14), dp(6), dp(14), dp(6))
         }
@@ -942,23 +930,22 @@ class MainActivity : Activity() {
             val qs = Questions.all.filter { it.category == cat }
             val graduated = qs.count { q -> states[q.id]?.let { ReviewLogic.isGraduated(it) } == true }
             val touched = qs.count { states[it.id] != null }
-            val accent = pal.categoryAccents[idx % pal.categoryAccents.size]
+            val accent = pal.categoryColors[idx % pal.categoryColors.size]
             val box = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(16), dp(16), dp(16), dp(16))
-                background = glassDrawable(dp(20).toFloat())
+                background = cardDrawable(dp(20).toFloat())
             }
-            // Category glyph chip (v0.3.2 principle: colour comes through the
-            // glass as light, surfaces are not painted). The chip itself is
-            // reading glass; the category colour lives only in the glyph.
+            // Category unit icon: a filled colour circle with a white glyph
+            // (Duolingo unit style).
             val chip = TextView(this).apply {
                 text = cat.take(1)
                 textSize = sizeHead
                 typeface = Typeface.DEFAULT_BOLD
-                setTextColor(accent)
+                setTextColor(Color.WHITE)
                 gravity = Gravity.CENTER
-                background = glassOval()
+                background = circleDrawable(accent)
             }
             box.addView(chip, LinearLayout.LayoutParams(dp(44), dp(44)))
             val inner = LinearLayout(this).apply {
