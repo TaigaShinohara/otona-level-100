@@ -22,7 +22,7 @@ import android.widget.TextView
 import kotlin.random.Random
 
 /**
- * Otona Level 100 v0.4.0.
+ * Otona Level 100 v0.5.0.
  * v0.2.0: UX review fixes (bar animation, gold reserved for level-up, session
  * persistence, shuffled choices, graduation box condition, due-review entry,
  * four font tiers, category mini bars, decluttered home, fixed next footer).
@@ -40,6 +40,11 @@ import kotlin.random.Random
  * ratio in per-category accent colours with glyph chips, the secondary button
  * no longer reads as disabled, tint/accent points added against monotony.
  * v0.3.0: Simple Glass applied app-wide (skill v1.1 canonical values).
+ * v0.5.0: drawn artwork everywhere (user: "make it exciting with
+ * illustrations, shapes and icons") — a drawn owl mascot with a daily speech
+ * bubble on Home, confetti + star row on the result, drawn category
+ * pictograms (bubble / heart / glyph / sign / coin) and tab icons. All
+ * vector-drawn in Art.kt; no image assets.
  * v0.4.0: full visual redesign to a Duolingo-style UI (user's direction;
  * ART_DIRECTION v2.0 supersedes the glass direction for this app): flat vivid
  * colours, chunky 3D-edge buttons, green unit-header home card, coloured
@@ -180,6 +185,8 @@ class MainActivity : Activity() {
                 text = name
                 textSize = sizeBody
                 background = null
+                setCompoundDrawablesWithIntrinsicBounds(TabIconDrawable(i, grey), null, null, null)
+                compoundDrawablePadding = dp(6)
                 setOnClickListener { onTabClicked(i) }
             }
         }
@@ -294,6 +301,8 @@ class MainActivity : Activity() {
         tabButtons.forEachIndexed { i, b ->
             val selected = i == index
             b.setTextColor(if (selected) pal.tabSelText else grey)
+            b.setCompoundDrawablesWithIntrinsicBounds(
+                TabIconDrawable(i, if (selected) pal.tabSelText else grey), null, null, null)
             b.typeface = if (selected) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
             b.background = if (selected) GradientDrawable().apply {
                 cornerRadius = dp(20).toFloat(); setColor(pal.tabSelBg)
@@ -378,6 +387,27 @@ class MainActivity : Activity() {
             setPadding(dp(24), dp(24), dp(24), dp(20))
             background = accentDrawable(dp(24).toFloat(), pal.green)
         }
+        // Mascot + speech bubble (v0.5.0): the owl cheers you on, one line a day.
+        val cheers = listOf(
+            "今日も5問、いってみよう！", "昨日の自分より、ちょっと大人に",
+            "「知らないと恥ずかしい」を1つ減らそう", "スキマ時間でレベルアップ！",
+            "無理なく、楽しくいこう")
+        val cheer = cheers[(today % cheers.size).toInt()]
+        val mascotRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        mascotRow.addView(MascotView(this), LinearLayout.LayoutParams(dp(84), dp(96)))
+        val bubble = label(cheer, sizeBody, pal.greenDark, bold = true).apply {
+            background = GradientDrawable().apply {
+                cornerRadius = dp(16).toFloat(); setColor(Color.WHITE)
+            }
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+        }
+        val bubbleLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        bubbleLp.leftMargin = dp(12)
+        mascotRow.addView(bubble, bubbleLp)
+        panel.addView(mascotRow)
         panel.addView(label("オトナレベル100", sizeBody, Color.WHITE, bold = true))
         panel.addView(label("Lv. $level", sizeHero, Color.WHITE, bold = true))
         panel.addView(label(LevelSystem.titleForLevel(level), sizeHead, Color.WHITE, bold = true))
@@ -568,6 +598,16 @@ class MainActivity : Activity() {
         val pillLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         pillLp.leftMargin = dp(8)
         headerRow.addView(catPill, pillLp)
+        // Small category pictogram next to the pill (v0.5.0).
+        val catIcon = android.widget.ImageView(this).apply {
+            background = circleDrawable(catColor)
+            setImageDrawable(CategoryIconDrawable(catIdx, catColor))
+            setPadding(dp(5), dp(5), dp(5), dp(5))
+            contentDescription = q.category
+        }
+        val iconLp = LinearLayout.LayoutParams(dp(26), dp(26))
+        iconLp.leftMargin = dp(6)
+        headerRow.addView(catIcon, iconLp)
         rootCol.addView(headerRow)
 
         val barRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -840,7 +880,26 @@ class MainActivity : Activity() {
             }
             panel.addView(pill)
         }
+        // Celebration (v0.5.0): confetti across the top of the panel, and a
+        // star per question — filled for each correct answer.
+        val confetti = ConfettiView(this, seed = sStartXp + sCorrect * 31)
+        val confettiLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52))
+        confettiLp.bottomMargin = dp(4)
+        panel.addView(confetti, confettiLp)
         panel.addView(label("${sItems.size}問中 ${sCorrect}問 正解", sizeHead, navy, bold = true))
+        val starRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        for (i in sItems.indices) {
+            val star = StarView(this, if (i < sCorrect) pal.yellow else pal.track, i < sCorrect)
+            val sLp = LinearLayout.LayoutParams(dp(30), dp(30))
+            sLp.leftMargin = dp(2); sLp.rightMargin = dp(2)
+            starRow.addView(star, sLp)
+        }
+        val starLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        starLp.topMargin = dp(6); starLp.bottomMargin = dp(2)
+        panel.addView(starRow, starLp)
         panel.addView(label("+${sXp} XP", sizeBody, navy, bold = true))
         panel.addView(label("Lv. $newLevel ・ ${LevelSystem.titleForLevel(newLevel)}", sizeBody, navy, bold = true))
         val bar = LevelBar()
@@ -937,17 +996,15 @@ class MainActivity : Activity() {
                 setPadding(dp(16), dp(16), dp(16), dp(16))
                 background = cardDrawable(dp(20).toFloat())
             }
-            // Category unit icon: a filled colour circle with a white glyph
-            // (Duolingo unit style).
-            val chip = TextView(this).apply {
-                text = cat.take(1)
-                textSize = sizeHead
-                typeface = Typeface.DEFAULT_BOLD
-                setTextColor(Color.WHITE)
-                gravity = Gravity.CENTER
+            // Category unit icon: a filled colour circle with a drawn white
+            // pictogram (speech bubble / heart / glyph / sign / coin).
+            val chip = android.widget.ImageView(this).apply {
                 background = circleDrawable(accent)
+                setImageDrawable(CategoryIconDrawable(idx, accent))
+                setPadding(dp(9), dp(9), dp(9), dp(9))
+                contentDescription = cat
             }
-            box.addView(chip, LinearLayout.LayoutParams(dp(44), dp(44)))
+            box.addView(chip, LinearLayout.LayoutParams(dp(48), dp(48)))
             val inner = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(12), 0, 0, 0)
