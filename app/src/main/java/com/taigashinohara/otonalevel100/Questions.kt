@@ -14,6 +14,8 @@ data class Question(
     val explanation: String,
     val scene: String,
     val source: String,
+    /** Code-drawn figure key (Art.kt SignView), e.g. "sign_stop". "" = none. */
+    val figure: String = "",
 )
 
 /**
@@ -75,22 +77,25 @@ object Questions {
             explanation = "「重」は「チョウ」とも読み、「重複」は「ちょうふく」が本来の読み。「じゅうふく」も広く使われる慣用読み。",
             scene = "アナウンスや読み合わせの場面で差が出る。", source = "辞書類"),
         // ---- 道路標識・交通 ----
-        Question("sign1", "標識・交通", QType.QUIZ, "青い円に白い矢印が描かれた標識の意味は？",
+        Question("sign1", "標識・交通", QType.QUIZ, "この標識の意味は？",
             listOf("一方通行", "指定方向以外進行禁止", "車両通行止め", "左折可"), 1,
-            explanation = "矢印の方向以外へは進めないことを示す規制標識。",
-            scene = "矢印と逆方向に進むと違反になるだけでなく危険。", source = "警察庁 道路標識"),
+            explanation = "青い円に白い矢印＝矢印の方向以外へは進めないことを示す規制標識。",
+            scene = "矢印と逆方向に進むと違反になるだけでなく危険。", source = "警察庁 道路標識",
+            figure = "sign_arrow"),
         Question("sign2", "標識・交通", QType.QUIZ, "「駐車」と「停車」の違いで正しいのは？",
             listOf("停車は5分以内なら何をしてもよい", "停車は人の乗り降りなど、すぐに運転できる状態での短時間の停止", "駐車禁止の場所では停車も常に禁止", "停車中はエンジンを切らなければならない"), 1,
             explanation = "停車は「直ちに運転できる状態での短時間の停止」。駐車禁止場所でも停車は可能な場合が多い。",
             scene = "「ちょっとだけ」のつもりの駐車が違反になる典型パターン。", source = "道路交通法"),
-        Question("sign3", "標識・交通", QType.CARD, "赤い三角（逆三角形）の標識の意味は？",
+        Question("sign3", "標識・交通", QType.CARD, "この標識の意味は？",
             cardBack = "止まれ（一時停止）",
-            explanation = "逆三角形は一時停止の標識。停止線で止まり、安全を確認してから進む。",
-            scene = "見落とすと違反だけでなく、出会い頭の事故につながる。", source = "警察庁 道路標識"),
-        Question("sign4", "標識・交通", QType.QUIZ, "黄色いひし形の標識が示すのは？",
+            explanation = "赤い逆三角形は一時停止の標識。停止線で止まり、安全を確認してから進む。",
+            scene = "見落とすと違反だけでなく、出会い頭の事故につながる。", source = "警察庁 道路標識",
+            figure = "sign_stop"),
+        Question("sign4", "標識・交通", QType.QUIZ, "この標識（黄色いひし形）が示すのは？",
             listOf("規制（してはいけないこと）", "警戒（この先の注意）", "案内（目的地の方向）", "指示（してもよいこと）"), 1,
             explanation = "黄色いひし形は警戒標識。「この先に何があるか」を知らせて注意を促す形と色。",
-            scene = "形と色だけで種類が分かると、標識を読むスピードが上がる。", source = "警察庁 道路標識"),
+            scene = "形と色だけで種類が分かると、標識を読むスピードが上がる。", source = "警察庁 道路標識",
+            figure = "sign_warning"),
         // ---- 社会・お金・手続き ----
         Question("society1", "社会・お金", QType.QUIZ, "「源泉徴収」とは？",
             listOf("給与から税金があらかじめ差し引かれる仕組み", "年末に自分で税金を一括で払う仕組み", "副業収入だけにかかる税金", "住民税の別名"), 0,

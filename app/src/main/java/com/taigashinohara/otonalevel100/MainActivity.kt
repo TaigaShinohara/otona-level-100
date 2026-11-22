@@ -22,7 +22,7 @@ import android.widget.TextView
 import kotlin.random.Random
 
 /**
- * Otona Level 100 v0.6.0.
+ * Otona Level 100 v0.7.0.
  * v0.2.0: UX review fixes (bar animation, gold reserved for level-up, session
  * persistence, shuffled choices, graduation box condition, due-review entry,
  * four font tiers, category mini bars, decluttered home, fixed next footer).
@@ -40,6 +40,10 @@ import kotlin.random.Random
  * ratio in per-category accent colours with glyph chips, the secondary button
  * no longer reads as disabled, tint/accent points added against monotony.
  * v0.3.0: Simple Glass applied app-wide (skill v1.1 canonical values).
+ * v0.7.0: figure questions (user's request) — questions whose type needs a
+ * picture now draw it in code (SignView in Art.kt): the three sign questions
+ * show the actual sign (stop / arrow / warning diamond) and their prompts
+ * became "この標識の意味は？". Question.figure carries the figure key.
  * v0.6.0: genre challenge (user's request) — tapping a category starts a
  * session of only that genre (due first, then new, then seen; graduated fill
  * the rest), and each category shows its completion rate (graduated share)
@@ -647,6 +651,17 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(8), 0, dp(8))
         }
+        if (q.figure.isNotEmpty()) {
+            // Figure question (v0.7.0): the sign is drawn in code above the prompt.
+            val figRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+            }
+            figRow.addView(SignView(this, q.figure), LinearLayout.LayoutParams(dp(118), dp(118)))
+            val figLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            figLp.bottomMargin = dp(6)
+            scrollCol.addView(figRow, figLp)
+        }
         scrollCol.addView(label(q.prompt, sizeHead, navy, bold = true))
 
         val feedback = LinearLayout(this).apply {
@@ -693,6 +708,12 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
             setPadding(dp(16), dp(24), dp(16), dp(24))
             background = cardDrawable(dp(24).toFloat())
+        }
+        if (q.figure.isNotEmpty()) {
+            val fig = SignView(this, q.figure)
+            val figLp2 = LinearLayout.LayoutParams(dp(104), dp(104))
+            figLp2.bottomMargin = dp(10)
+            cardBox.addView(fig, figLp2)
         }
         val frontText = label(q.prompt, sizeHead, navy, bold = true).apply { gravity = Gravity.CENTER }
         val backText = label(q.cardBack, sizeHead, navy, bold = true).apply {

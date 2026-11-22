@@ -156,6 +156,83 @@ class ConfettiView(context: Context, seed: Int) : View(context) {
     }
 }
 
+/**
+ * A road sign drawn in code, for figure questions (v0.7.0). Keys:
+ * "sign_stop" （止まれ）, "sign_arrow" （指定方向以外進行禁止）, "sign_warning" （警戒）.
+ * Stylised after the real signs (警察庁 道路標識）.
+ */
+class SignView(context: Context, private val key: String) : View(context) {
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val cx = width / 2f
+        val cy = height / 2f
+        val r = min(width, height) / 2f * 0.92f
+        when (key) {
+            "sign_stop" -> {
+                // White border triangle, red inside, white 止まれ.
+                val outer = Path()
+                outer.moveTo(cx, cy + r)
+                outer.lineTo(cx - r, cy - r * 0.82f)
+                outer.lineTo(cx + r, cy - r * 0.82f)
+                outer.close()
+                p.color = Color.WHITE
+                p.style = Paint.Style.FILL
+                canvas.drawPath(outer, p)
+                val inner = Path()
+                inner.moveTo(cx, cy + r * 0.86f)
+                inner.lineTo(cx - r * 0.84f, cy - r * 0.68f)
+                inner.lineTo(cx + r * 0.84f, cy - r * 0.68f)
+                inner.close()
+                p.color = Color.rgb(0xE6, 0x00, 0x12)
+                canvas.drawPath(inner, p)
+                p.color = Color.WHITE
+                p.textAlign = Paint.Align.CENTER
+                p.typeface = Typeface.DEFAULT_BOLD
+                p.textSize = r * 0.52f
+                val fm = p.fontMetrics
+                canvas.drawText("止まれ", cx, cy - r * 0.05f - (fm.ascent + fm.descent) / 2, p)
+            }
+            "sign_arrow" -> {
+                p.color = Color.rgb(0x00, 0x4B, 0xA5)
+                p.style = Paint.Style.FILL
+                canvas.drawCircle(cx, cy, r, p)
+                // White arrow pointing up: shaft + head.
+                p.color = Color.WHITE
+                canvas.drawRect(cx - r * 0.13f, cy - r * 0.05f, cx + r * 0.13f, cy + r * 0.62f, p)
+                val head = Path()
+                head.moveTo(cx, cy - r * 0.68f)
+                head.lineTo(cx + r * 0.42f, cy - r * 0.02f)
+                head.lineTo(cx - r * 0.42f, cy - r * 0.02f)
+                head.close()
+                canvas.drawPath(head, p)
+            }
+            else -> { // sign_warning: yellow diamond with black "!"
+                val dia = Path()
+                dia.moveTo(cx, cy - r)
+                dia.lineTo(cx + r, cy)
+                dia.lineTo(cx, cy + r)
+                dia.lineTo(cx - r, cy)
+                dia.close()
+                p.color = Color.rgb(0xFF, 0xD2, 0x00)
+                p.style = Paint.Style.FILL
+                canvas.drawPath(dia, p)
+                p.color = INK
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = r * 0.07f
+                canvas.drawPath(dia, p)
+                p.style = Paint.Style.FILL
+                p.textAlign = Paint.Align.CENTER
+                p.typeface = Typeface.DEFAULT_BOLD
+                p.textSize = r * 1.05f
+                val fm = p.fontMetrics
+                canvas.drawText("!", cx, cy - (fm.ascent + fm.descent) / 2, p)
+            }
+        }
+    }
+}
+
 /** White pictogram drawn over a category colour circle. kind = category index. */
 class CategoryIconDrawable(private val kind: Int, private val accent: Int) : Drawable() {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
