@@ -22,7 +22,7 @@ import android.widget.TextView
 import kotlin.random.Random
 
 /**
- * Otona Level 100 v0.5.0.
+ * Otona Level 100 v0.6.0.
  * v0.2.0: UX review fixes (bar animation, gold reserved for level-up, session
  * persistence, shuffled choices, graduation box condition, due-review entry,
  * four font tiers, category mini bars, decluttered home, fixed next footer).
@@ -40,6 +40,10 @@ import kotlin.random.Random
  * ratio in per-category accent colours with glyph chips, the secondary button
  * no longer reads as disabled, tint/accent points added against monotony.
  * v0.3.0: Simple Glass applied app-wide (skill v1.1 canonical values).
+ * v0.6.0: genre challenge (user's request) — tapping a category starts a
+ * session of only that genre (due first, then new, then seen; graduated fill
+ * the rest), and each category shows its completion rate (graduated share)
+ * as a big % and bar. Genre sessions do not mark the daily set as done.
  * v0.5.0: drawn artwork everywhere (user: "make it exciting with
  * illustrations, shapes and icons") — a drawn owl mascot with a daily speech
  * bubble on Home, confetti + star row on the result, drawn category
@@ -157,7 +161,7 @@ class MainActivity : Activity() {
     private var sXp = 0
     private var sStreak = 0
     private var sStartXp = 0
-    private var sMode = 0 // 0 daily, 1 weak-only, 2 due-review
+    private var sMode = 0 // 0 daily, 1 weak-only, 2 due-review, 3 genre challenge
     private var sAnswered = false
     private var sChosen = -1
     private var sCounted = false
@@ -525,7 +529,7 @@ class MainActivity : Activity() {
         if (sIndex < sItems.size) showQuestion() else showResult()
     }
 
-    private fun startSession(mode: Int) {
+    private fun startSession(mode: Int, category: String? = null) {
         val today = ProgressStore.today()
         val states = store.allStates()
         val picked: List<Question> = when (mode) {
@@ -533,6 +537,25 @@ class MainActivity : Activity() {
                 .shuffled().take(5)
             2 -> Questions.all.filter { q -> states[q.id]?.let { ReviewLogic.isDue(it, today) } == true }
                 .sortedBy { states[it.id]?.dueDay ?: 0L }.take(5)
+            3 -> {
+                // Genre challenge: only this category. Due first, then new,
+                // then seen-not-graduated; graduated fill only if still short
+                // (with the 20-question sample a genre has 4 questions).
+                val qs = Questions.all.filter { it.category == category }
+                val due = qs.filter { q ->
+                    states[q.id]?.let { ReviewLogic.isDue(it, today) || ReviewLogic.isSpotCheckDue(it, today) } == true
+                }.shuffled()
+                val fresh = qs.filter { it.id !in due.map { p -> p.id } && states[it.id] == null }.shuffled()
+                val rest = qs.filter { q ->
+                    q.id !in due.map { p -> p.id } && q.id !in fresh.map { p -> p.id } &&
+                        states[q.id]?.let { ReviewLogic.isGraduated(it) } != true
+                }.shuffled()
+                val grads = qs.filter { q ->
+                    q.id !in due.map { p -> p.id } && q.id !in fresh.map { p -> p.id } &&
+                        q.id !in rest.map { p -> p.id }
+                }.shuffled()
+                (due + fresh + rest + grads).take(5)
+            }
             else -> {
                 val list = mutableListOf<Question>()
                 // Review slots: regular due first-class, plus graduated spot
@@ -562,7 +585,7 @@ class MainActivity : Activity() {
                 list.take(5)
             }
         }
-        if (picked.isEmpty()) { showScreen(1); return }
+        if (picked.isEmpty()) { showScreen(if (mode == 3) 2 else 1); return }
         sItems = buildItems(picked)
         sIndex = 0; sCorrect = 0; sXp = 0; sStreak = 0
         sStartXp = store.xp; sMode = mode; sAnswered = false; sChosen = -1; sCounted = false
@@ -915,6 +938,7 @@ class MainActivity : Activity() {
             when (sMode) {
                 1 -> "苦手の復習、おつかれさま"
                 2 -> "今日の復習、おつかれさま"
+                3 -> "ジャンルの挑戦、おつかれさま"
                 else -> "今日の分は完了。よくできました"
             }, sizeBody, grey))
         col.addView(panel)
@@ -985,6 +1009,7 @@ class MainActivity : Activity() {
             setPadding(dp(20), dp(20), dp(20), dp(20))
         }
         col.addView(label("カテゴリ", sizeHead, navy, bold = true))
+        col.addView(label("ジャンルをタップすると、そのジャンルだけで挑戦できます", sizeSmall, grey))
         Questions.categories.forEachIndexed { idx, cat ->
             val qs = Questions.all.filter { it.category == cat }
             val graduated = qs.count { q -> states[q.id]?.let { ReviewLogic.isGraduated(it) } == true }
@@ -1010,14 +1035,34 @@ class MainActivity : Activity() {
                 setPadding(dp(12), 0, 0, 0)
             }
             inner.addView(label(cat, sizeBody, navy, bold = true))
-            // v0.3.1: the bar shows the SOLVED ratio in the category accent colour
-            // (it previously showed graduations only, so 2/4 solved looked empty).
+            // Completion rate = graduated share (v0.6.0, user's request). The
+            // bar and the big % both show it; the solved count stays as a sub-line.
+            val rate = if (qs.isEmpty()) 0 else graduated * 100 / qs.size
             val mini = LevelBar(accent, accent)
-            mini.describe("$cat。解いた ${touched}問 / 全 ${qs.size}問。卒業 ${graduated}問")
-            mini.set(if (qs.isEmpty()) 0 else touched * 100 / qs.size)
+            mini.describe("$cat。コンプリート率 ${rate}パーセント。卒業 ${graduated}問 / 全 ${qs.size}問。解いた ${touched}問")
+            mini.set(rate)
             inner.addView(mini.root)
-            inner.addView(label("解いた ${touched}/${qs.size} ・ 卒業 ${graduated}問", sizeSmall, grey))
+            inner.addView(label("卒業 ${graduated}/${qs.size}問 ・ 解いた ${touched}問", sizeSmall, grey))
             box.addView(inner, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            // Right side: the big completion % and a "挑戦" pill. The whole box
+            // is the tap target for the genre challenge.
+            val right = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+                setPadding(dp(10), 0, 0, 0)
+            }
+            right.addView(label("$rate%", sizeHead, accent, bold = true))
+            val goPill = label("挑戦", sizeSmall, Color.WHITE, bold = true).apply {
+                background = accentDrawable(dp(12).toFloat(), pal.green)
+                setPadding(dp(12), dp(4), dp(12), dp(4))
+            }
+            val goLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            goLp.topMargin = dp(6)
+            right.addView(goPill, goLp)
+            box.addView(right)
+            box.isClickable = true
+            box.contentDescription = "$cat に挑戦。コンプリート率 ${rate}パーセント"
+            box.setOnClickListener { startSession(3, cat) }
             val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             lp.topMargin = dp(12)
             col.addView(box, lp)
