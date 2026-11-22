@@ -22,7 +22,7 @@ import android.widget.TextView
 import kotlin.random.Random
 
 /**
- * Otona Level 100 v0.8.0.
+ * Otona Level 100 v0.8.1.
  * v0.2.0: UX review fixes (bar animation, gold reserved for level-up, session
  * persistence, shuffled choices, graduation box condition, due-review entry,
  * four font tiers, category mini bars, decluttered home, fixed next footer).
@@ -40,6 +40,9 @@ import kotlin.random.Random
  * ratio in per-category accent colours with glyph chips, the secondary button
  * no longer reads as disabled, tint/accent points added against monotony.
  * v0.3.0: Simple Glass applied app-wide (skill v1.1 canonical values).
+ * v0.8.1: cross-model source check (pipeline step 3, Gemini) ran on the keigo
+ * pilot batch: 16 OK, 4 flagged. keigo12 replaced (its "correct" answer had
+ * divided opinion), explanations of keigo13/14/19 softened/corrected.
  * v0.8.0: question pool 20 -> 104 (user's request) — the keigo pilot batch
  * (keigo5-24, docs/問題データ_パイロット_敬語20.md) plus 16 new questions in
  * each other category, and three more code-drawn signs (noparking / speed /
