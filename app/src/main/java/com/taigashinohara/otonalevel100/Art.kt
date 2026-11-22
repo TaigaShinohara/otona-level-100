@@ -208,6 +208,52 @@ class SignView(context: Context, private val key: String) : View(context) {
                 head.close()
                 canvas.drawPath(head, p)
             }
+            "sign_noparking" -> {
+                // Blue disc, red ring and diagonal slash = 駐車禁止.
+                p.color = Color.rgb(0x00, 0x4B, 0xA5)
+                p.style = Paint.Style.FILL
+                canvas.drawCircle(cx, cy, r, p)
+                p.color = Color.rgb(0xE6, 0x00, 0x12)
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = r * 0.24f
+                canvas.drawCircle(cx, cy, r * 0.86f, p)
+                canvas.save()
+                canvas.rotate(45f, cx, cy)
+                canvas.drawRect(cx - r * 0.10f, cy - r * 0.95f, cx + r * 0.10f, cy + r * 0.95f, p)
+                canvas.restore()
+            }
+            "sign_speed" -> {
+                // White disc, red ring, black number = 最高速度.
+                p.color = Color.WHITE
+                p.style = Paint.Style.FILL
+                canvas.drawCircle(cx, cy, r, p)
+                p.color = Color.rgb(0xE6, 0x00, 0x12)
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = r * 0.20f
+                canvas.drawCircle(cx, cy, r * 0.88f, p)
+                p.color = INK
+                p.style = Paint.Style.FILL
+                p.textAlign = Paint.Align.CENTER
+                p.typeface = Typeface.DEFAULT_BOLD
+                p.textSize = r * 0.95f
+                val fm2 = p.fontMetrics
+                canvas.drawText("50", cx, cy - (fm2.ascent + fm2.descent) / 2, p)
+            }
+            "sign_oneway" -> {
+                // Blue rounded rectangle, white arrow to the right = 一方通行.
+                val rect = android.graphics.RectF(cx - r, cy - r * 0.62f, cx + r, cy + r * 0.62f)
+                p.color = Color.rgb(0x00, 0x4B, 0xA5)
+                p.style = Paint.Style.FILL
+                canvas.drawRoundRect(rect, r * 0.18f, r * 0.18f, p)
+                p.color = Color.WHITE
+                canvas.drawRect(cx - r * 0.62f, cy - r * 0.14f, cx + r * 0.18f, cy + r * 0.14f, p)
+                val head = Path()
+                head.moveTo(cx + r * 0.72f, cy)
+                head.lineTo(cx + r * 0.12f, cy - r * 0.40f)
+                head.lineTo(cx + r * 0.12f, cy + r * 0.40f)
+                head.close()
+                canvas.drawPath(head, p)
+            }
             else -> { // sign_warning: yellow diamond with black "!"
                 val dia = Path()
                 dia.moveTo(cx, cy - r)

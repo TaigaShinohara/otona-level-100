@@ -126,10 +126,16 @@ class LocalDayTest {
 
 class QuestionsTest {
     @Test fun poolHasFourPerCategoryAndOneCardMinimum() {
-        assertEquals(20, Questions.all.size)
+        // v0.8.0: pool grew to 104 (keigo 24 incl. the pilot batch, others 20).
+        assertEquals(104, Questions.all.size)
+        val expected = mapOf("敬語" to 24, "マナー" to 20, "漢字" to 20, "標識・交通" to 20, "社会・お金" to 20)
         Questions.categories.forEach { cat ->
-            assertEquals("cat=$cat", 4, Questions.all.count { it.category == cat })
+            assertEquals("cat=$cat", expected[cat], Questions.all.count { it.category == cat })
         }
+        // Figure questions exist and their keys are known to SignView.
+        val figures = Questions.all.filter { it.figure.isNotEmpty() }
+        assertEquals(6, figures.size)
+        assertTrue(figures.all { it.figure in setOf("sign_stop", "sign_arrow", "sign_warning", "sign_noparking", "sign_speed", "sign_oneway") })
         assertTrue(Questions.all.any { it.type == QType.CARD })
         Questions.all.filter { it.type == QType.QUIZ }.forEach { q ->
             assertEquals("q=${q.id}", 4, q.choices.size)
