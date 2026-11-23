@@ -33,7 +33,11 @@ class ProgressStore(context: Context) {
         val raw = prefs.getString("q_$id", null) ?: return null
         val parts = raw.split(",")
         if (parts.size != 3) return null
-        return ReviewLogic.State(parts[0].toInt(), parts[1].toLong(), parts[2].toInt())
+        // Guarded parse (v0.9.0 audit): corrupted data must not crash the app.
+        val box = parts[0].toIntOrNull() ?: return null
+        val due = parts[1].toLongOrNull() ?: return null
+        val streak = parts[2].toIntOrNull() ?: return null
+        return ReviewLogic.State(box, due, streak)
     }
 
     fun saveState(id: String, state: ReviewLogic.State) {

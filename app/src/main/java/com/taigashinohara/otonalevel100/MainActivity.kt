@@ -22,7 +22,7 @@ import android.widget.TextView
 import kotlin.random.Random
 
 /**
- * Otona Level 100 v0.8.1.
+ * Otona Level 100 v0.9.0.
  * v0.2.0: UX review fixes (bar animation, gold reserved for level-up, session
  * persistence, shuffled choices, graduation box condition, due-review entry,
  * four font tiers, category mini bars, decluttered home, fixed next footer).
@@ -40,6 +40,16 @@ import kotlin.random.Random
  * ratio in per-category accent colours with glyph chips, the secondary button
  * no longer reads as disabled, tint/accent points added against monotony.
  * v0.3.0: Simple Glass applied app-wide (skill v1.1 canonical values).
+ * v0.9.0: full bug-fix pass (user report + audit). Main fix: tabs were dead
+ * during a session (showQuestion disabled them and onTabClicked early-returned)
+ * — tabs now work mid-session and never discard the saved session implicitly.
+ * Audit fixes: off-schedule correct answers no longer earn XP (level farming
+ * via repeated genre challenges), the review screen/session now include
+ * spot-check-due questions, a short daily set still gets its card, an
+ * all-graduated pool falls back to a practice set instead of bouncing tabs,
+ * corrupted per-question state can no longer crash stateFor, an emptied
+ * restored session is dropped cleanly, and the no-parking sign's slash is
+ * filled again (paint style leak in SignView).
  * v0.8.1: cross-model source check (pipeline step 3, Gemini) ran on the keigo
  * pilot batch: 16 OK, 4 flagged. keigo12 replaced (its "correct" answer had
  * divided opinion), explanations of keigo13/14/19 softened/corrected.
@@ -233,7 +243,13 @@ class MainActivity : Activity() {
         val saved = store.loadSession()
         if (saved != null && saved.items.isNotEmpty()) {
             restoreSession(saved)
-            if (sIndex < sItems.size) showQuestion() else showResult()
+            when {
+                // All saved questions vanished from the pool (data update):
+                // drop the stale session instead of showing an empty result.
+                sItems.isEmpty() -> { store.clearSession(); showScreen(0) }
+                sIndex < sItems.size -> showQuestion()
+                else -> showResult()
+            }
         } else {
             showScreen(0)
         }
@@ -293,8 +309,11 @@ class MainActivity : Activity() {
         Settings.Global.getFloat(contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
 
     private fun onTabClicked(index: Int) {
-        if (inQuestionPhase) return
-        if (store.hasSession()) store.clearSession()
+        // v0.9.0 (user report): tabs must work even mid-session. The session is
+        // persisted after every step, so leaving it via a tab keeps it
+        // resumable from Home. Tab taps never discard a session implicitly —
+        // it is cleared only by explicit actions (the result screen's home
+        // button, or Home's "やめて、今日の5問をはじめる").
         showScreen(index)
     }
 
@@ -307,13 +326,8 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun setTabsEnabled(enabled: Boolean) {
-        tabButtons.forEach { it.isEnabled = enabled; it.alpha = if (enabled) 1f else 0.45f }
-    }
-
     private fun showScreen(index: Int) {
         inQuestionPhase = false
-        setTabsEnabled(true)
         tabButtons.forEachIndexed { i, b ->
             val selected = i == index
             b.setTextColor(if (selected) pal.tabSelText else grey)
@@ -538,7 +552,11 @@ class MainActivity : Activity() {
     private fun resumeSavedSession() {
         val saved = store.loadSession() ?: return
         restoreSession(saved)
-        if (sIndex < sItems.size) showQuestion() else showResult()
+        when {
+            sItems.isEmpty() -> { store.clearSession(); showScreen(0) }
+            sIndex < sItems.size -> showQuestion()
+            else -> showResult()
+        }
     }
 
     private fun startSession(mode: Int, category: String? = null) {
@@ -547,8 +565,12 @@ class MainActivity : Activity() {
         val picked: List<Question> = when (mode) {
             1 -> Questions.all.filter { q -> states[q.id]?.let { ReviewLogic.isWeak(it) } == true }
                 .shuffled().take(5)
-            2 -> Questions.all.filter { q -> states[q.id]?.let { ReviewLogic.isDue(it, today) } == true }
-                .sortedBy { states[it.id]?.dueDay ?: 0L }.take(5)
+            2 -> Questions.all.filter { q ->
+                // Spot checks count as today's review too (v0.9.0 audit: the
+                // review screen and this session used to ignore them while the
+                // daily set included them).
+                states[q.id]?.let { ReviewLogic.isDue(it, today) || ReviewLogic.isSpotCheckDue(it, today) } == true
+            }.sortedBy { states[it.id]?.dueDay ?: 0L }.take(5)
             3 -> {
                 // Genre challenge: only this category. Due first, then new,
                 // then seen-not-graduated; graduated fill only if still short
@@ -592,7 +614,16 @@ class MainActivity : Activity() {
                         q.type == QType.CARD && q.id !in list.map { p -> p.id } &&
                             states[q.id]?.let { ReviewLogic.isGraduated(it) } != true
                     } ?: Questions.all.firstOrNull { it.type == QType.CARD && it.id !in list.map { p -> p.id } }
-                    if (card != null && list.size >= 5) list[4] = card
+                    if (card != null) {
+                        // v0.9.0 audit: a short set used to end up with no card
+                        // at all; append instead of only swapping slot 5.
+                        if (list.size >= 5) list[4] = card else list += card
+                    }
+                }
+                if (list.isEmpty()) {
+                    // Everything graduated and nothing due: still let the user
+                    // play a practice set instead of bouncing to another tab.
+                    list += Questions.all.shuffled().take(5)
                 }
                 list.take(5)
             }
@@ -607,7 +638,8 @@ class MainActivity : Activity() {
 
     private fun showQuestion() {
         inQuestionPhase = true
-        setTabsEnabled(false)
+        // Tabs stay live during a session (v0.9.0): the session is persisted,
+        // so the user can leave and resume it from Home at any point.
         val item = sItems[sIndex]
         val q = item.q
         val xpNow = store.xp
@@ -861,11 +893,18 @@ class MainActivity : Activity() {
         if (correct) {
             store.totalCorrect += 1
             sCorrect += 1
-            sStreak += 1
-            var gain = if (isReview) LevelSystem.XP_REVIEW_CORRECT else LevelSystem.XP_NEW_CORRECT
-            if (sStreak % 3 == 0) gain += LevelSystem.XP_STREAK_BONUS
-            sXp += gain
-            store.xp += gain
+            // v0.9.0 audit fix: XP (and the streak bonus) is earned only when
+            // the answer counts for learning — first attempt, due review, or
+            // a spot check. Re-answering an already-known question off-schedule
+            // (e.g. repeating genre challenges) is practice and earns no XP;
+            // before this fix it could be farmed to inflate the level.
+            if (dueOrNew) {
+                sStreak += 1
+                var gain = if (isReview) LevelSystem.XP_REVIEW_CORRECT else LevelSystem.XP_NEW_CORRECT
+                if (sStreak % 3 == 0) gain += LevelSystem.XP_STREAK_BONUS
+                sXp += gain
+                store.xp += gain
+            }
         } else {
             sStreak = 0
         }
@@ -901,7 +940,6 @@ class MainActivity : Activity() {
     // ---------- Result ----------
     private fun showResult() {
         inQuestionPhase = false
-        setTabsEnabled(true)
         if (!sCounted) {
             if (sMode == 0) {
                 store.sessionsDone += 1
@@ -985,7 +1023,9 @@ class MainActivity : Activity() {
     private fun buildReview(): View {
         val today = ProgressStore.today()
         val states = store.allStates()
-        val due = Questions.all.filter { q -> states[q.id]?.let { ReviewLogic.isDue(it, today) } == true }
+        val due = Questions.all.filter { q ->
+            states[q.id]?.let { ReviewLogic.isDue(it, today) || ReviewLogic.isSpotCheckDue(it, today) } == true
+        }
         val weak = Questions.all.filter { q -> states[q.id]?.let { ReviewLogic.isWeak(it) } == true }
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL

@@ -217,6 +217,9 @@ class SignView(context: Context, private val key: String) : View(context) {
                 p.style = Paint.Style.STROKE
                 p.strokeWidth = r * 0.24f
                 canvas.drawCircle(cx, cy, r * 0.86f, p)
+                // v0.9.0 audit fix: the slash must be a filled bar — the paint
+                // was still in STROKE style, which drew only its outline.
+                p.style = Paint.Style.FILL
                 canvas.save()
                 canvas.rotate(45f, cx, cy)
                 canvas.drawRect(cx - r * 0.10f, cy - r * 0.95f, cx + r * 0.10f, cy + r * 0.95f, p)
