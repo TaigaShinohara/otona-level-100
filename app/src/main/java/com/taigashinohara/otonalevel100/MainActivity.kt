@@ -22,7 +22,12 @@ import android.widget.TextView
 import kotlin.random.Random
 
 /**
- * Otona Level 100 v0.9.0.
+ * Otona Level 100 v0.10.0.
+ * v0.10.0: recolour to Midnight + Gold (ART_DIRECTION v2.1, user picked
+ * proposal A2 on 2026-11-25). Brand green/blue/yellow replaced by midnight
+ * navy #22355E / deep shade #182747 / gold #C9A86A; correct-feedback green
+ * stays as a semantic colour; the social category colour moves to teal so
+ * it no longer reads as the old brand green. Mascot recoloured to match.
  * v0.2.0: UX review fixes (bar animation, gold reserved for level-up, session
  * persistence, shuffled choices, graduation box condition, due-review entry,
  * four font tiers, category mini bars, decluttered home, fixed next footer).
@@ -79,11 +84,13 @@ import kotlin.random.Random
  */
 class MainActivity : Activity() {
 
-    // ---------- Duolingo-style palette (v0.4.0, ART_DIRECTION v2.0) ----------
-    // Vivid flat colours, chunky shapes, bold type. Dark follows Duolingo's
-    // night theme (deep blue-grey). Colour roles: green = primary / progress /
-    // correct, blue = selection & info, yellow = level-up only, red tints =
-    // "not quite" feedback (informative, never shaming).
+    // ---------- Palette: Midnight + Gold (v0.10.0, ART_DIRECTION v2.1) ----------
+    // Chunky Duolingo-style shapes and bold type, recoloured at the user's
+    // request (2026-11-25): deep midnight navy as the brand primary, muted
+    // gold as the only accent (progress fill, level-up, selection). Semantic
+    // feedback colours stay: green = correct, red tints = "not quite"
+    // (informative, never shaming). Field names keep their v0.4.0 roles:
+    // green/greenDark now hold the midnight pair.
     private inner class Palette(dark: Boolean) {
         val bgTop: Int
         val bgBottom: Int
@@ -93,14 +100,14 @@ class MainActivity : Activity() {
         val textMain: Int
         val textSub: Int
         val heading: Int
-        val green = Color.rgb(0x58, 0xCC, 0x02)
-        val greenDark = Color.rgb(0x58, 0xA7, 0x00)
+        val green = Color.rgb(0x22, 0x35, 0x5E)
+        val greenDark = Color.rgb(0x18, 0x27, 0x47)
         val greenTextOn = Color.WHITE
-        val blue = Color.rgb(0x1C, 0xB0, 0xF6)
+        val blue = Color.rgb(0x5B, 0x84, 0xC4)
         val tabSelBg: Int
         val tabSelText: Int
-        val yellow = Color.rgb(0xFF, 0xC8, 0x00)
-        val yellowText = Color.rgb(0x7C, 0x5E, 0x00)
+        val yellow = Color.rgb(0xC9, 0xA8, 0x6A)
+        val yellowText = Color.rgb(0x6B, 0x55, 0x18)
         val correctBg: Int
         val correctBorder: Int
         val correctText: Int
@@ -115,27 +122,27 @@ class MainActivity : Activity() {
             Color.rgb(0xFF, 0x86, 0xD0), // マナー pink
             Color.rgb(0xA5, 0x60, 0xF5), // 漢字 purple
             Color.rgb(0xFF, 0x96, 0x00), // 標識 orange
-            Color.rgb(0x58, 0xCC, 0x02)) // 社会 green
+            Color.rgb(0x12, 0xA5, 0x94)) // 社会 teal (was brand green; navy is the brand now)
         init {
             if (dark) {
-                bgTop = Color.rgb(0x13, 0x1F, 0x24)
-                bgBottom = Color.rgb(0x0E, 0x18, 0x1C)
-                surface = Color.rgb(0x1F, 0x2A, 0x30)
-                border = Color.rgb(0x37, 0x46, 0x4F)
-                track = Color.rgb(0x37, 0x46, 0x4F)
-                textMain = Color.rgb(0xF1, 0xF7, 0xFB)
-                textSub = Color.rgb(0xA8, 0xB6, 0xBC)
-                heading = Color.rgb(0xF1, 0xF7, 0xFB)
-                tabSelBg = Color.rgb(0x1E, 0x3A, 0x4C)
-                tabSelText = Color.rgb(0x7C, 0xD4, 0xFC)
+                bgTop = Color.rgb(0x0D, 0x15, 0x24)
+                bgBottom = Color.rgb(0x0A, 0x11, 0x1E)
+                surface = Color.rgb(0x16, 0x23, 0x3C)
+                border = Color.rgb(0x2A, 0x3B, 0x5F)
+                track = Color.rgb(0x2A, 0x3B, 0x5F)
+                textMain = Color.rgb(0xF2, 0xF5, 0xFA)
+                textSub = Color.rgb(0x9A, 0xA7, 0xBD)
+                heading = Color.rgb(0xF2, 0xF5, 0xFA)
+                tabSelBg = Color.rgb(0x22, 0x35, 0x5E)
+                tabSelText = Color.rgb(0xC9, 0xA8, 0x6A)
                 correctBg = Color.rgb(0x1D, 0x33, 0x27)
-                correctBorder = green
+                correctBorder = Color.rgb(0x58, 0xCC, 0x02)
                 correctText = Color.rgb(0x8C, 0xE9, 0x9A)
                 wrongBgC = Color.rgb(0x3D, 0x24, 0x28)
                 wrongBorder = Color.rgb(0xFF, 0x4B, 0x4B)
                 wrongText = Color.rgb(0xFF, 0xA8, 0xB8)
-                chipBg = Color.rgb(0x1E, 0x3A, 0x4C)
-                chipText = Color.rgb(0x7C, 0xD4, 0xFC)
+                chipBg = Color.rgb(0x22, 0x35, 0x5E)
+                chipText = Color.rgb(0xC9, 0xA8, 0x6A)
             } else {
                 bgTop = Color.WHITE
                 bgBottom = Color.rgb(0xF7, 0xF7, 0xF7)
@@ -145,16 +152,16 @@ class MainActivity : Activity() {
                 textMain = Color.rgb(0x3C, 0x3C, 0x3C)
                 textSub = Color.rgb(0x77, 0x77, 0x77)
                 heading = Color.rgb(0x3C, 0x3C, 0x3C)
-                tabSelBg = Color.rgb(0xDD, 0xF4, 0xFF)
-                tabSelText = Color.rgb(0x18, 0x99, 0xD6)
+                tabSelBg = Color.rgb(0xEC, 0xEE, 0xF3)
+                tabSelText = Color.rgb(0x8C, 0x6D, 0x1F)
                 correctBg = Color.rgb(0xD7, 0xFF, 0xB8)
-                correctBorder = green
+                correctBorder = Color.rgb(0x58, 0xCC, 0x02)
                 correctText = Color.rgb(0x58, 0xA7, 0x00)
                 wrongBgC = Color.rgb(0xFF, 0xDF, 0xE0)
                 wrongBorder = Color.rgb(0xFF, 0x4B, 0x4B)
                 wrongText = Color.rgb(0xEA, 0x2B, 0x2B)
-                chipBg = Color.rgb(0xDD, 0xF4, 0xFF)
-                chipText = Color.rgb(0x18, 0x99, 0xD6)
+                chipBg = Color.rgb(0xEC, 0xEE, 0xF3)
+                chipText = Color.rgb(0x8C, 0x6D, 0x1F)
             }
         }
     }

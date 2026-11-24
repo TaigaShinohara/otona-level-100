@@ -20,9 +20,11 @@ import kotlin.random.Random
  * the Duolingo-style palette of ART_DIRECTION v2.0.
  */
 
-private val GREEN = Color.rgb(0x58, 0xCC, 0x02)
-private val GREEN_DARK = Color.rgb(0x58, 0xA7, 0x00)
-private val ORANGE = Color.rgb(0xFF, 0x96, 0x00)
+// Midnight + Gold brand (v0.10.0): GREEN/GREEN_DARK now hold the midnight
+// pair (mascot body/wings), ORANGE holds the gold (beak/feet, confetti).
+private val GREEN = Color.rgb(0x22, 0x35, 0x5E)
+private val GREEN_DARK = Color.rgb(0x18, 0x27, 0x47)
+private val ORANGE = Color.rgb(0xC9, 0xA8, 0x6A)
 private val YELLOW = Color.rgb(0xFF, 0xC8, 0x00)
 private val BLUE = Color.rgb(0x1C, 0xB0, 0xF6)
 private val PINK = Color.rgb(0xFF, 0x86, 0xD0)
@@ -65,7 +67,7 @@ class MascotView(context: Context) : View(context) {
         p.color = GREEN
         canvas.drawCircle(cx, bodyCy, bodyR, p)
         // Belly
-        p.color = Color.rgb(0xE5, 0xF9, 0xD0)
+        p.color = Color.rgb(0xF5, 0xED, 0xD8)
         canvas.drawOval(RectF(cx - bodyR * 0.52f, bodyCy + bodyR * 0.18f, cx + bodyR * 0.52f, bodyCy + bodyR * 0.98f), p)
 
         // Eyes
