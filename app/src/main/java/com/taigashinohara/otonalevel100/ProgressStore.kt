@@ -29,6 +29,11 @@ class ProgressStore(context: Context) {
         get() = prefs.getLong("last_daily_day", -1L)
         set(v) = prefs.edit().putLong("last_daily_day", v).apply()
 
+    /** Whether the review-mechanics intro has been shown in full (UX3-05). */
+    var reviewIntroSeen: Boolean
+        get() = prefs.getBoolean("review_intro_seen", false)
+        set(v) = prefs.edit().putBoolean("review_intro_seen", v).apply()
+
     fun stateFor(id: String): ReviewLogic.State? {
         val raw = prefs.getString("q_$id", null) ?: return null
         val parts = raw.split(",")

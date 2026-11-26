@@ -24,6 +24,7 @@ import kotlin.random.Random
 // pair (mascot body/wings), ORANGE holds the gold (beak/feet, confetti).
 private val GREEN = Color.rgb(0x22, 0x35, 0x5E)
 private val GREEN_DARK = Color.rgb(0x18, 0x27, 0x47)
+private val OUTLINE = Color.rgb(0x93, 0xA9, 0xD1) // pale steel: mascot silhouette on the midnight card (UX3-11)
 private val ORANGE = Color.rgb(0xC9, 0xA8, 0x6A)
 private val YELLOW = Color.rgb(0xFF, 0xC8, 0x00)
 private val BLUE = Color.rgb(0x1C, 0xB0, 0xF6)
@@ -66,6 +67,13 @@ class MascotView(context: Context) : View(context) {
         // Body
         p.color = GREEN
         canvas.drawCircle(cx, bodyCy, bodyR, p)
+        // Silhouette outline (UX3-11): the body shares the header card's
+        // midnight, so without this ring only the belly and eyes would read.
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = bodyR * 0.09f
+        p.color = OUTLINE
+        canvas.drawCircle(cx, bodyCy, bodyR - p.strokeWidth / 2f, p)
+        p.style = Paint.Style.FILL
         // Belly
         p.color = Color.rgb(0xF5, 0xED, 0xD8)
         canvas.drawOval(RectF(cx - bodyR * 0.52f, bodyCy + bodyR * 0.18f, cx + bodyR * 0.52f, bodyCy + bodyR * 0.98f), p)

@@ -22,7 +22,19 @@ import android.widget.TextView
 import kotlin.random.Random
 
 /**
- * Otona Level 100 v0.10.0.
+ * Otona Level 100 v0.11.0.
+ * v0.11.0: UX review round 3 fixes (docs/UX_REVIEW_v0-10-0.md; verdict was
+ * pass with recommendations). All six recommendations resolved: level-bar
+ * fill is gold on every screen (UX3-04), card questions no longer repeat
+ * their prompt/figure above the card (UX3-02), the question header states
+ * the category once (UX3-03), the category rate is the bar plus exact
+ * counts only (UX3-01), the review mechanics text shows in full once and
+ * then behind a toggle (UX3-05), and Home gains the small category-balance
+ * dots + mini bars the design specifies (UX3-06). Plus three light
+ * optionals: no duplicated Lv/title line on a level-up result (UX3-08),
+ * the categories footer wording matches what is counted (UX3-10), and the
+ * mascot gets a pale outline so its silhouette reads on the midnight
+ * card (UX3-11).
  * v0.10.0: recolour to Midnight + Gold (ART_DIRECTION v2.1, user picked
  * proposal A2 on 2026-11-25). Brand green/blue/yellow replaced by midnight
  * navy #22355E / deep shade #182747 / gold #C9A86A; correct-feedback green
@@ -361,8 +373,10 @@ class MainActivity : Activity() {
 
     // ---------- Level bar: grey track, flat vivid fill, thick and rounded ----------
     private inner class LevelBar(
-        fillTop: Int = pal.green,
-        fillBottom: Int = pal.green,
+        // Gold is the progress fill on every screen (ART_DIRECTION v2.1;
+        // UX3-04: the question/result bars used to fall back to midnight).
+        fillTop: Int = pal.yellow,
+        fillBottom: Int = pal.yellow,
         trackColor: Int = pal.track
     ) {
         val root = FrameLayout(this@MainActivity).apply {
@@ -479,6 +493,50 @@ class MainActivity : Activity() {
             col.addView(start, lp)
             if (doneToday) col.addView(label("今日の分は完了しています。おかわりは自由です", sizeSmall, grey))
         }
+        // Category balance (design v1.2 §1, UX3-06): tiny dots + mini bars
+        // only — a quiet read on where you stand, never competing with the
+        // level number above. Detail lives on the Categories tab.
+        val statesH = store.allStates()
+        val balRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        val balSummary = StringBuilder("カテゴリ別の卒業割合。")
+        Questions.categories.forEachIndexed { idx, cat ->
+            val qs = Questions.all.filter { it.category == cat }
+            val grad = qs.count { q -> statesH[q.id]?.let { ReviewLogic.isGraduated(it) } == true }
+            val rate = if (qs.isEmpty()) 0 else grad * 100 / qs.size
+            balSummary.append("${cat.substringBefore("・")} ${rate}パーセント。")
+            val accent = pal.categoryColors[idx % pal.categoryColors.size]
+            val cell = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+            }
+            val dot = View(this).apply { background = circleDrawable(accent) }
+            cell.addView(dot, LinearLayout.LayoutParams(dp(10), dp(10)))
+            val nameLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            nameLp.topMargin = dp(3)
+            cell.addView(label(cat.substringBefore("・"), sizeSmall, grey), nameLp)
+            val track = FrameLayout(this).apply {
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(3).toFloat(); setColor(pal.track)
+                }
+            }
+            val fill = View(this).apply {
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(3).toFloat(); setColor(accent)
+                }
+            }
+            track.addView(fill, FrameLayout.LayoutParams(dp(40) * rate / 100, dp(6)))
+            val tLp = LinearLayout.LayoutParams(dp(40), dp(6))
+            tLp.topMargin = dp(3)
+            cell.addView(track, tLp)
+            balRow.addView(cell, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        balRow.contentDescription = balSummary.toString()
+        val balLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        balLp.topMargin = dp(20)
+        col.addView(balRow, balLp)
         col.addView(label("1セット5問・約1分。レベルは下がりません", sizeSmall, grey))
         return ScrollView(this).apply { addView(col) }
     }
@@ -672,16 +730,9 @@ class MainActivity : Activity() {
         val pillLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         pillLp.leftMargin = dp(8)
         headerRow.addView(catPill, pillLp)
-        // Small category pictogram next to the pill (v0.5.0).
-        val catIcon = android.widget.ImageView(this).apply {
-            background = circleDrawable(catColor)
-            setImageDrawable(CategoryIconDrawable(catIdx, catColor))
-            setPadding(dp(5), dp(5), dp(5), dp(5))
-            contentDescription = q.category
-        }
-        val iconLp = LinearLayout.LayoutParams(dp(26), dp(26))
-        iconLp.leftMargin = dp(6)
-        headerRow.addView(catIcon, iconLp)
+        // UX3-03: the category is stated once, by the pill. The pictogram
+        // disc that used to sit next to it only repeated the same category;
+        // the pictograms live on as the canonical icons on the Categories tab.
         rootCol.addView(headerRow)
 
         val barRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -698,8 +749,10 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(8), 0, dp(8))
         }
-        if (q.figure.isNotEmpty()) {
+        if (q.type != QType.CARD && q.figure.isNotEmpty()) {
             // Figure question (v0.7.0): the sign is drawn in code above the prompt.
+            // UX3-02: card questions carry their prompt (and figure) on the
+            // card face itself, so the header copy is quiz-only.
             val figRow = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER
@@ -709,7 +762,9 @@ class MainActivity : Activity() {
             figLp.bottomMargin = dp(6)
             scrollCol.addView(figRow, figLp)
         }
-        scrollCol.addView(label(q.prompt, sizeHead, navy, bold = true))
+        if (q.type != QType.CARD) {
+            scrollCol.addView(label(q.prompt, sizeHead, navy, bold = true))
+        }
 
         val feedback = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -998,7 +1053,11 @@ class MainActivity : Activity() {
         starLp.topMargin = dp(6); starLp.bottomMargin = dp(2)
         panel.addView(starRow, starLp)
         panel.addView(label("+${sXp} XP", sizeBody, navy, bold = true))
-        panel.addView(label("Lv. $newLevel ・ ${LevelSystem.titleForLevel(newLevel)}", sizeBody, navy, bold = true))
+        // UX3-08: on a level-up the gold pill above already carries
+        // "Lv. N ・ title", so the plain label only appears otherwise.
+        if (!leveledUp) {
+            panel.addView(label("Lv. $newLevel ・ ${LevelSystem.titleForLevel(newLevel)}", sizeBody, navy, bold = true))
+        }
         val bar = LevelBar()
         bar.describe("レベル$newLevel。次のレベルまであと約${approxQuestionsLeft(store.xp)}問")
         panel.addView(bar.root)
@@ -1055,7 +1114,23 @@ class MainActivity : Activity() {
         val cLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         cLp.topMargin = dp(8); cLp.bottomMargin = dp(4)
         col.addView(chipRow, cLp)
-        col.addView(label("間隔は 1日 → 3日 → 7日 → 21日。3回連続正解で卒業です", sizeSmall, grey))
+        // How review works (UX3-05): in full on the first visit only; after
+        // that it sits behind a one-tap toggle instead of standing text.
+        val intro = label("間隔は 1日 → 3日 → 7日 → 21日。3回連続正解で卒業です", sizeSmall, grey)
+        if (!store.reviewIntroSeen) {
+            col.addView(intro)
+            store.reviewIntroSeen = true
+        } else {
+            intro.visibility = View.GONE
+            val toggle = label("仕組みについて", sizeSmall, grey).apply {
+                setPadding(0, dp(4), 0, dp(4))
+                setOnClickListener {
+                    intro.visibility = if (intro.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+                }
+            }
+            col.addView(toggle)
+            col.addView(intro)
+        }
         if (due.isNotEmpty()) {
             val b = primaryButton("今日の復習をはじめる（${minOf(due.size, 5)}問）") { startSession(2) }
             val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50))
@@ -1111,8 +1186,9 @@ class MainActivity : Activity() {
                 setPadding(dp(12), 0, 0, 0)
             }
             inner.addView(label(cat, sizeBody, navy, bold = true))
-            // Completion rate = graduated share (v0.6.0, user's request). The
-            // bar and the big % both show it; the solved count stays as a sub-line.
+            // Completion rate = graduated share (v0.6.0, user's request).
+            // UX3-01: the bar is the one expression of the rate; the counts
+            // below carry the exact numbers. (The big % numeral was removed.)
             val rate = if (qs.isEmpty()) 0 else graduated * 100 / qs.size
             val mini = LevelBar(accent, accent)
             mini.describe("$cat。コンプリート率 ${rate}パーセント。卒業 ${graduated}問 / 全 ${qs.size}問。解いた ${touched}問")
@@ -1120,20 +1196,18 @@ class MainActivity : Activity() {
             inner.addView(mini.root)
             inner.addView(label("卒業 ${graduated}/${qs.size}問 ・ 解いた ${touched}問", sizeSmall, grey))
             box.addView(inner, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            // Right side: the big completion % and a "挑戦" pill. The whole box
-            // is the tap target for the genre challenge.
+            // Right side: just the "挑戦" pill (UX3-01 removed the big %).
+            // The whole box is the tap target for the genre challenge.
             val right = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_HORIZONTAL
                 setPadding(dp(10), 0, 0, 0)
             }
-            right.addView(label("$rate%", sizeHead, accent, bold = true))
             val goPill = label("挑戦", sizeSmall, Color.WHITE, bold = true).apply {
                 background = accentDrawable(dp(12).toFloat(), pal.green)
                 setPadding(dp(12), dp(4), dp(12), dp(4))
             }
             val goLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            goLp.topMargin = dp(6)
             right.addView(goPill, goLp)
             box.addView(right)
             box.isClickable = true
@@ -1144,7 +1218,9 @@ class MainActivity : Activity() {
             col.addView(box, lp)
         }
         val totalGraduated = states.values.count { ReviewLogic.isGraduated(it) }
-        col.addView(label("これまで解いた問題 ${store.totalAnswered} ・ 卒業 ${totalGraduated}問", sizeSmall, grey))
+        // UX3-10: totalAnswered counts every answer (repeats included), so
+        // the wording says 回答回数, not 解いた問題数.
+        col.addView(label("回答は通算 ${store.totalAnswered} 回 ・ 卒業は合計 ${totalGraduated} 問", sizeSmall, grey))
         return ScrollView(this).apply { addView(col) }
     }
 
