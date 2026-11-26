@@ -1,19 +1,26 @@
 package com.taigashinohara.otonalevel100
 
-/** Adult level 1..100 and its XP curve (design v1.1 §1). Levels never go down. */
+/** Adult level 1..100 and its XP curve (design v1.3 §1/§3.5). Levels never go down. */
 object LevelSystem {
     const val MAX_LEVEL = 100
     const val XP_NEW_CORRECT = 10
     const val XP_REVIEW_CORRECT = 5
     const val XP_STREAK_BONUS = 5
 
-    /** XP needed to advance from [level] to level+1. */
+    /**
+     * XP needed to advance from [level] to level+1. Design v1.3 §3.5: the
+     * bands match the title bands and grow by a flat +20 per band (the old
+     * curve jumped 80 -> 120 at Lv50, which felt abruptly heavy). Total to
+     * Lv100 is 10,350 XP, about the same journey length as before (10,250).
+     */
     fun xpToNext(level: Int): Int = when {
         level >= MAX_LEVEL -> 0
         level < 10 -> 50
-        level < 50 -> 80
-        level < 85 -> 120
-        else -> 160
+        level < 25 -> 70
+        level < 45 -> 90
+        level < 65 -> 110
+        level < 85 -> 130
+        else -> 150
     }
 
     /** Cumulative XP at which [level] starts (level 1 starts at 0). */
@@ -23,23 +30,28 @@ object LevelSystem {
         return sum
     }
 
-    fun levelForXp(xp: Int): Int {
+    /**
+     * Level for [xp], never below [floor]. The floor is the highest level the
+     * user has ever reached; design v1.3 §3.5 requires that a curve change
+     * (like the v1.3 smoothing itself) can never lower an existing level.
+     */
+    fun levelForXp(xp: Int, floor: Int = 1): Int {
         var level = 1
         while (level < MAX_LEVEL && xp >= cumulativeXp(level + 1)) level++
-        return level
+        return maxOf(level, floor.coerceIn(1, MAX_LEVEL))
     }
 
-    /** Progress 0..100 inside the current level. */
-    fun progressInLevel(xp: Int): Int {
-        val level = levelForXp(xp)
+    /** Progress 0..100 inside the current (floor-aware) level. */
+    fun progressInLevel(xp: Int, floor: Int = 1): Int {
+        val level = levelForXp(xp, floor)
         if (level >= MAX_LEVEL) return 100
         val base = cumulativeXp(level)
         val span = xpToNext(level)
         return ((xp - base) * 100 / span).coerceIn(0, 100)
     }
 
-    fun xpToNextLevel(xp: Int): Int {
-        val level = levelForXp(xp)
+    fun xpToNextLevel(xp: Int, floor: Int = 1): Int {
+        val level = levelForXp(xp, floor)
         if (level >= MAX_LEVEL) return 0
         return cumulativeXp(level + 1) - xp
     }
@@ -114,5 +126,82 @@ object LocalDay {
     fun today(nowMillis: Long = System.currentTimeMillis()): Long {
         val offset = java.util.TimeZone.getDefault().getOffset(nowMillis)
         return Math.floorDiv(nowMillis + offset, 86_400_000L)
+    }
+}
+
+/**
+ * Daily-set design (design v1.3 §3.5): the difficulty mix per level band and
+ * the wave ordering of a set. Pure functions so they are unit-testable.
+ */
+object SessionDesign {
+
+    /** Percent of new questions per difficulty (1 easy, 2 normal, 3 hard), by level band. */
+    fun difficultyMix(level: Int): Triple<Int, Int, Int> = when {
+        level < 10 -> Triple(70, 30, 0)
+        level < 25 -> Triple(40, 50, 10)
+        level < 45 -> Triple(20, 55, 25)
+        level < 65 -> Triple(10, 50, 40)
+        level < 85 -> Triple(0, 50, 50)
+        else -> Triple(0, 40, 60)
+    }
+
+    /**
+     * Pick [count] new questions from [candidates] following the band mix.
+     * Each slot is assigned a difficulty proportionally; when that difficulty
+     * is unavailable the slot falls back to the closest available difficulty
+     * (design: 手ごわい不足→ふつう、やさしい不足→ふつう). Never blocks: if the
+     * pool runs dry the result is simply shorter.
+     */
+    fun pickNew(
+        candidates: List<Question>,
+        count: Int,
+        level: Int,
+        random: kotlin.random.Random = kotlin.random.Random
+    ): List<Question> {
+        if (count <= 0 || candidates.isEmpty()) return emptyList()
+        val (easyPct, _, hardPct) = difficultyMix(level)
+        val wants = mutableListOf<Int>()
+        repeat(Math.round(count * easyPct / 100.0).toInt()) { wants += 1 }
+        repeat(Math.round(count * hardPct / 100.0).toInt()) { wants += 3 }
+        while (wants.size < count) wants += 2
+        val pool = candidates.shuffled(random).toMutableList()
+        val picked = mutableListOf<Question>()
+        for (want in wants) {
+            val order = listOf(want, 2, 1, 3).distinct()
+                .sortedBy { kotlin.math.abs(it - want) }
+            val idx = order.firstNotNullOfOrNull { d ->
+                pool.indexOfFirst { it.difficulty == d }.takeIf { it >= 0 }
+            }
+            if (idx != null) picked += pool.removeAt(idx)
+        }
+        return picked
+    }
+
+    /**
+     * Order a daily set into the wave (design v1.3 §3.5): an opener (a review
+     * question, or the easiest new one), new questions in the middle, the
+     * hardest question at position 4 (index 3), and a closer (the second
+     * review, or the easiest remaining) so the set ends on a success.
+     */
+    fun orderWave(
+        review: List<Question>,
+        fresh: List<Question>,
+        random: kotlin.random.Random = kotlin.random.Random
+    ): List<Question> {
+        val all = review + fresh
+        if (all.size < 3) return all.shuffled(random)
+        val remaining = all.toMutableList()
+        val peak = remaining.maxByOrNull { it.difficulty }!!
+        remaining.remove(peak)
+        val opener = review.firstOrNull() ?: remaining.minByOrNull { it.difficulty }!!
+        remaining.remove(opener)
+        val closer = review.getOrNull(1) ?: remaining.minByOrNull { it.difficulty }!!
+        remaining.remove(closer)
+        val result = mutableListOf<Question>()
+        result += opener
+        result += remaining.shuffled(random)
+        result.add(minOf(3, result.size), peak)
+        result += closer
+        return result
     }
 }

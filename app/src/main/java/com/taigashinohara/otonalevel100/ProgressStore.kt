@@ -34,6 +34,15 @@ class ProgressStore(context: Context) {
         get() = prefs.getBoolean("review_intro_seen", false)
         set(v) = prefs.edit().putBoolean("review_intro_seen", v).apply()
 
+    /**
+     * Highest level ever reached (design v1.3 §3.5 migration rule): when the
+     * XP curve changes, levels are recomputed but never lowered, so the
+     * reached level is kept as a floor.
+     */
+    var levelFloor: Int
+        get() = prefs.getInt("level_floor", 1)
+        set(v) = prefs.edit().putInt("level_floor", v).apply()
+
     fun stateFor(id: String): ReviewLogic.State? {
         val raw = prefs.getString("q_$id", null) ?: return null
         val parts = raw.split(",")

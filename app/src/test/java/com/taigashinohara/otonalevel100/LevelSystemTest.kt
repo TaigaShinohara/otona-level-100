@@ -40,6 +40,86 @@ class LevelSystemTest {
         assertEquals("頼れるオトナ", LevelSystem.titleForLevel(65))
         assertEquals("教養あるオトナ", LevelSystem.titleForLevel(85))
     }
+
+    @Test fun smoothedCurveMatchesDesignV13() {
+        // Design v1.3 §3.5: bands match the title bands, +20 XP per band.
+        assertEquals(50, LevelSystem.xpToNext(1))
+        assertEquals(70, LevelSystem.xpToNext(10))
+        assertEquals(90, LevelSystem.xpToNext(25))
+        assertEquals(110, LevelSystem.xpToNext(45))
+        assertEquals(130, LevelSystem.xpToNext(65))
+        assertEquals(150, LevelSystem.xpToNext(85))
+        assertEquals(450, LevelSystem.cumulativeXp(10))
+        assertEquals(1500, LevelSystem.cumulativeXp(25))
+        assertEquals(3300, LevelSystem.cumulativeXp(45))
+        assertEquals(5500, LevelSystem.cumulativeXp(65))
+        assertEquals(8100, LevelSystem.cumulativeXp(85))
+        assertEquals(10350, LevelSystem.totalXpToMax())
+    }
+
+    @Test fun levelFloorNeverLowersLevel() {
+        // Migration rule (v1.3 §3.5): a reached level is kept as a floor.
+        assertEquals(50, LevelSystem.levelForXp(0, floor = 50))
+        assertEquals(50, LevelSystem.levelForXp(3400, floor = 50))
+        assertTrue(LevelSystem.progressInLevel(3400, floor = 50) in 0..100)
+        assertTrue(LevelSystem.xpToNextLevel(3400, floor = 50) > 0)
+        assertEquals(100, LevelSystem.levelForXp(LevelSystem.totalXpToMax(), floor = 50))
+    }
+}
+
+class SessionDesignTest {
+    private fun q(id: String, difficulty: Int) = Question(
+        id, "敬語", QType.QUIZ, "p", listOf("a", "b", "c", "d"), 0,
+        explanation = "e", scene = "s", source = "src", difficulty = difficulty
+    )
+
+    @Test fun mixFollowsLevelBands() {
+        assertEquals(Triple(70, 30, 0), SessionDesign.difficultyMix(1))
+        assertEquals(Triple(40, 50, 10), SessionDesign.difficultyMix(10))
+        assertEquals(Triple(20, 55, 25), SessionDesign.difficultyMix(25))
+        assertEquals(Triple(10, 50, 40), SessionDesign.difficultyMix(45))
+        assertEquals(Triple(0, 50, 50), SessionDesign.difficultyMix(65))
+        assertEquals(Triple(0, 40, 60), SessionDesign.difficultyMix(85))
+    }
+
+    @Test fun pickNewRespectsMixWhenPoolIsPlentiful() {
+        val pool = (1..10).map { q("e$it", 1) } + (1..10).map { q("n$it", 2) } + (1..10).map { q("h$it", 3) }
+        val low = SessionDesign.pickNew(pool, 3, level = 1, random = kotlin.random.Random(7))
+        assertEquals(3, low.size)
+        assertEquals(2, low.count { it.difficulty == 1 })
+        assertEquals(1, low.count { it.difficulty == 2 })
+        assertEquals(0, low.count { it.difficulty == 3 })
+        val high = SessionDesign.pickNew(pool, 3, level = 90, random = kotlin.random.Random(7))
+        assertEquals(2, high.count { it.difficulty == 3 })
+        assertEquals(1, high.count { it.difficulty == 2 })
+    }
+
+    @Test fun pickNewFallsBackToClosestDifficulty() {
+        // No hard questions in the pool: a high-level pick must still fill up.
+        val pool = (1..5).map { q("e$it", 1) } + (1..5).map { q("n$it", 2) }
+        val picked = SessionDesign.pickNew(pool, 3, level = 90, random = kotlin.random.Random(7))
+        assertEquals(3, picked.size)
+        assertTrue(picked.all { it.difficulty <= 2 })
+    }
+
+    @Test fun wavePutsPeakFourthAndReviewAtBothEnds() {
+        val r1 = q("r1", 2); val r2 = q("r2", 1)
+        val f1 = q("f1", 1); val f2 = q("f2", 2); val f3 = q("f3", 3)
+        val ordered = SessionDesign.orderWave(listOf(r1, r2), listOf(f1, f2, f3), kotlin.random.Random(7))
+        assertEquals(5, ordered.size)
+        assertEquals("r1", ordered[0].id) // opener = a review
+        assertEquals("f3", ordered[3].id) // peak = hardest, at position 4
+        assertEquals("r2", ordered[4].id) // closer = the other review
+    }
+
+    @Test fun waveWithoutReviewOpensAndClosesOnEasy() {
+        val f1 = q("f1", 1); val f2 = q("f2", 1); val f3 = q("f3", 2); val f4 = q("f4", 2); val f5 = q("f5", 3)
+        val ordered = SessionDesign.orderWave(emptyList(), listOf(f1, f2, f3, f4, f5), kotlin.random.Random(7))
+        assertEquals(5, ordered.size)
+        assertEquals(1, ordered[0].difficulty)
+        assertEquals("f5", ordered[3].id)
+        assertEquals(1, ordered[4].difficulty)
+    }
 }
 
 class ReviewLogicTest {
@@ -142,6 +222,15 @@ class QuestionsTest {
             assertTrue(q.answerIndex in q.choices.indices)
         }
         assertEquals(Questions.all.size, Questions.all.map { it.id }.distinct().size)
+    }
+
+    @Test fun difficultyTagsCoverThePool() {
+        // Design v1.3 §3.5: every question carries a tag (1 easy, 2 normal,
+        // 3 hard); the counts are the approved tagging pass of 2026-11-26.
+        assertTrue(Questions.all.all { it.difficulty in 1..3 })
+        assertEquals(48, Questions.all.count { it.difficulty == 1 })
+        assertEquals(34, Questions.all.count { it.difficulty == 2 })
+        assertEquals(22, Questions.all.count { it.difficulty == 3 })
     }
 
     @Test fun shuffledChoicesKeepTheSameCorrectAnswer() {

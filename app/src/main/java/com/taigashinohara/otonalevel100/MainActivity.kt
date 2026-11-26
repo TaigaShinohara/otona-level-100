@@ -22,7 +22,17 @@ import android.widget.TextView
 import kotlin.random.Random
 
 /**
- * Otona Level 100 v0.11.0.
+ * Otona Level 100 v0.12.0.
+ * v0.12.0: level design (design v1.3 §3.5) implemented. Every question now
+ * carries a difficulty tag (1 easy / 2 normal / 3 hard; approved tagging
+ * pass, 48/34/22). Daily new questions are picked by the level band's
+ * difficulty mix with closest-difficulty fallback (SessionDesign.pickNew),
+ * and the daily set is ordered into the wave — review opener, new questions,
+ * the hardest at position 4, review closer (SessionDesign.orderWave) —
+ * instead of a plain shuffle. The XP curve is smoothed to the title bands
+ * (+20 XP per band, 10,350 total) and a stored level floor guarantees a
+ * curve change never lowers an existing level. A title change on level-up
+ * gets its own line on the result screen (the milestone treatment).
  * v0.11.0: UX review round 3 fixes (docs/UX_REVIEW_v0-10-0.md; verdict was
  * pass with recommendations). All six recommendations resolved: level-bar
  * fill is gold on every screen (UX3-04), card questions no longer repeat
@@ -415,12 +425,19 @@ class MainActivity : Activity() {
     }
 
     private fun approxQuestionsLeft(xp: Int): Int =
-        (LevelSystem.xpToNextLevel(xp) + LevelSystem.XP_NEW_CORRECT - 1) / LevelSystem.XP_NEW_CORRECT
+        (LevelSystem.xpToNextLevel(xp, store.levelFloor) + LevelSystem.XP_NEW_CORRECT - 1) / LevelSystem.XP_NEW_CORRECT
+
+    /** Current level with the never-decrease floor (design v1.3 §3.5). */
+    private fun currentLevel(xp: Int = store.xp): Int {
+        val lv = LevelSystem.levelForXp(xp, store.levelFloor)
+        if (lv > store.levelFloor) store.levelFloor = lv
+        return lv
+    }
 
     // ---------- Home: the level is the star, on a green unit-header card ----------
     private fun buildHome(): View {
         val xp = store.xp
-        val level = LevelSystem.levelForXp(xp)
+        val level = currentLevel(xp)
         val today = ProgressStore.today()
         val doneToday = store.lastDailyDay == today
         val saved = store.loadSession()
@@ -464,7 +481,7 @@ class MainActivity : Activity() {
         panel.addView(label(LevelSystem.titleForLevel(level), sizeHead, Color.WHITE, bold = true))
         val bar = LevelBar(fillTop = pal.yellow, fillBottom = pal.yellow, trackColor = pal.greenDark)
         bar.describe("レベル$level。次のレベルまであと約${approxQuestionsLeft(xp)}問")
-        bar.set(LevelSystem.progressInLevel(xp))
+        bar.set(LevelSystem.progressInLevel(xp, store.levelFloor))
         panel.addView(bar.root)
         if (level >= LevelSystem.MAX_LEVEL) {
             panel.addView(label("オトナの達人に到達！", sizeBody, pal.yellow, bold = true))
@@ -662,9 +679,12 @@ class MainActivity : Activity() {
                 val due = Questions.all.filter { q ->
                     states[q.id]?.let { ReviewLogic.isDue(it, today) || ReviewLogic.isSpotCheckDue(it, today) } == true
                 }.shuffled()
-                list += due.take(2)
-                val fresh = Questions.all.filter { it.id !in list.map { p -> p.id } && states[it.id] == null }.shuffled()
-                list += fresh.take(5 - list.size)
+                val duePicked = due.take(2)
+                list += duePicked
+                // New slots follow the level band's difficulty mix (design
+                // v1.3 §3.5 ①); the fill-up below stays difficulty-blind.
+                val freshPool = Questions.all.filter { it.id !in list.map { p -> p.id } && states[it.id] == null }
+                list += SessionDesign.pickNew(freshPool, 5 - list.size, currentLevel())
                 if (list.size < 5) {
                     // Fill-up excludes graduated questions (IR2-2): graduation
                     // means leaving the pool, not just the review list.
@@ -681,8 +701,9 @@ class MainActivity : Activity() {
                     } ?: Questions.all.firstOrNull { it.type == QType.CARD && it.id !in list.map { p -> p.id } }
                     if (card != null) {
                         // v0.9.0 audit: a short set used to end up with no card
-                        // at all; append instead of only swapping slot 5.
-                        if (list.size >= 5) list[4] = card else list += card
+                        // at all; append instead of only swapping the last slot
+                        // (the wave ordering below decides the final position).
+                        if (list.size >= 5) list[list.size - 1] = card else list += card
                     }
                 }
                 if (list.isEmpty()) {
@@ -690,7 +711,12 @@ class MainActivity : Activity() {
                     // play a practice set instead of bouncing to another tab.
                     list += Questions.all.shuffled().take(5)
                 }
-                list.take(5)
+                // Wave ordering (design v1.3 §3.5 ②): opener -> new -> peak at
+                // position 4 -> closer, instead of a plain shuffle.
+                val dueIds = duePicked.map { it.id }.toSet()
+                val reviewPart = list.filter { it.id in dueIds }
+                val freshPart = list.filter { it.id !in dueIds }
+                SessionDesign.orderWave(reviewPart, freshPart).take(5)
             }
         }
         if (picked.isEmpty()) { showScreen(if (mode == 3) 2 else 1); return }
@@ -708,7 +734,7 @@ class MainActivity : Activity() {
         val item = sItems[sIndex]
         val q = item.q
         val xpNow = store.xp
-        val levelNow = LevelSystem.levelForXp(xpNow)
+        val levelNow = currentLevel(xpNow)
 
         val rootCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -739,7 +765,7 @@ class MainActivity : Activity() {
         barRow.addView(label("Lv. $levelNow", sizeBody, navy, bold = true))
         val miniBar = LevelBar()
         miniBar.describe("レベル$levelNow。次のレベルまであと約${approxQuestionsLeft(xpNow)}問")
-        miniBar.set(LevelSystem.progressInLevel(xpNow))
+        miniBar.set(LevelSystem.progressInLevel(xpNow, store.levelFloor))
         val barLp = LinearLayout.LayoutParams(0, dp(18), 1f)
         barLp.leftMargin = dp(12)
         barRow.addView(miniBar.root, barLp)
@@ -924,17 +950,17 @@ class MainActivity : Activity() {
             }
         }
         if (miniBar != null) {
-            val levelBefore = LevelSystem.levelForXp(xpBefore)
-            val levelNow = LevelSystem.levelForXp(store.xp)
+            val levelBefore = currentLevel(xpBefore)
+            val levelNow = currentLevel(store.xp)
             if (animateBar && correct) {
                 if (levelNow > levelBefore) {
-                    miniBar.animate(LevelSystem.progressInLevel(xpBefore), 100)
-                    miniBar.root.postDelayed({ miniBar.set(LevelSystem.progressInLevel(store.xp)) }, 480)
+                    miniBar.animate(LevelSystem.progressInLevel(xpBefore, store.levelFloor), 100)
+                    miniBar.root.postDelayed({ miniBar.set(LevelSystem.progressInLevel(store.xp, store.levelFloor)) }, 480)
                 } else {
-                    miniBar.animate(LevelSystem.progressInLevel(xpBefore), LevelSystem.progressInLevel(store.xp))
+                    miniBar.animate(LevelSystem.progressInLevel(xpBefore, store.levelFloor), LevelSystem.progressInLevel(store.xp, store.levelFloor))
                 }
             } else {
-                miniBar.set(LevelSystem.progressInLevel(store.xp))
+                miniBar.set(LevelSystem.progressInLevel(store.xp, store.levelFloor))
             }
             miniBar.describe("レベル$levelNow。次のレベルまであと約${approxQuestionsLeft(store.xp)}問")
         }
@@ -1010,8 +1036,8 @@ class MainActivity : Activity() {
             sCounted = true
             persistSession()
         }
-        val newLevel = LevelSystem.levelForXp(store.xp)
-        val startLevel = LevelSystem.levelForXp(sStartXp)
+        val newLevel = currentLevel(store.xp)
+        val startLevel = currentLevel(sStartXp)
         val leveledUp = newLevel > startLevel
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1031,6 +1057,14 @@ class MainActivity : Activity() {
                 setPadding(dp(16), dp(8), dp(16), dp(8))
             }
             panel.addView(pill)
+            if (LevelSystem.titleForLevel(newLevel) != LevelSystem.titleForLevel(startLevel)) {
+                // Design v1.3 §3.5: a title change is a big milestone, so the
+                // new title gets its own moment under the pill.
+                val titleLine = label("称号が「${LevelSystem.titleForLevel(newLevel)}」に上がった！", sizeHead, pal.yellowText, bold = true)
+                val tLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                tLp.topMargin = dp(10)
+                panel.addView(titleLine, tLp)
+            }
         }
         // Celebration (v0.5.0): confetti across the top of the panel, and a
         // star per question — filled for each correct answer.
@@ -1062,10 +1096,10 @@ class MainActivity : Activity() {
         bar.describe("レベル$newLevel。次のレベルまであと約${approxQuestionsLeft(store.xp)}問")
         panel.addView(bar.root)
         if (leveledUp) {
-            bar.animate(LevelSystem.progressInLevel(sStartXp), 100)
-            bar.root.postDelayed({ bar.set(LevelSystem.progressInLevel(store.xp)) }, 480)
+            bar.animate(LevelSystem.progressInLevel(sStartXp, store.levelFloor), 100)
+            bar.root.postDelayed({ bar.set(LevelSystem.progressInLevel(store.xp, store.levelFloor)) }, 480)
         } else {
-            bar.animate(LevelSystem.progressInLevel(sStartXp), LevelSystem.progressInLevel(store.xp))
+            bar.animate(LevelSystem.progressInLevel(sStartXp, store.levelFloor), LevelSystem.progressInLevel(store.xp, store.levelFloor))
         }
         panel.addView(label(
             when (sMode) {
