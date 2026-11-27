@@ -95,6 +95,52 @@ class PraiseTest {
     }
 }
 
+class OwlGrowthTest {
+    @Test fun stagesFollowLevel() {
+        assertEquals(0, OwlGrowth.stageForLevel(1))
+        assertEquals(0, OwlGrowth.stageForLevel(4))
+        assertEquals(1, OwlGrowth.stageForLevel(5))
+        assertEquals(1, OwlGrowth.stageForLevel(14))
+        assertEquals(2, OwlGrowth.stageForLevel(15))
+        assertEquals(2, OwlGrowth.stageForLevel(29))
+        assertEquals(3, OwlGrowth.stageForLevel(30))
+        assertEquals(3, OwlGrowth.stageForLevel(59))
+        assertEquals(4, OwlGrowth.stageForLevel(60))
+        assertEquals(4, OwlGrowth.stageForLevel(100))
+    }
+
+    @Test fun branchAndNextStage() {
+        assertTrue(!OwlGrowth.canBranch(29))
+        assertTrue(OwlGrowth.canBranch(30))
+        assertEquals(5, OwlGrowth.nextStageLevel(1))
+        assertEquals(15, OwlGrowth.nextStageLevel(5))
+        assertEquals(30, OwlGrowth.nextStageLevel(15))
+        assertEquals(60, OwlGrowth.nextStageLevel(30))
+        assertEquals(null, OwlGrowth.nextStageLevel(60))
+        assertEquals("まんまるオトナ", OwlGrowth.stageName(4, OwlGrowth.PATH_CUTE))
+        assertEquals("りりしいオトナ", OwlGrowth.stageName(4, OwlGrowth.PATH_COOL))
+        assertEquals("オトナ", OwlGrowth.stageName(3, OwlGrowth.PATH_NONE))
+    }
+}
+
+class BookshelfTest {
+    @Test fun booksFillWithGraduationRatio() {
+        assertEquals(0, Bookshelf.booksFor(0, 20))
+        assertEquals(5, Bookshelf.booksFor(10, 20))
+        assertEquals(9, Bookshelf.booksFor(19, 20))
+        assertEquals(10, Bookshelf.booksFor(20, 20))
+        assertEquals(5, Bookshelf.booksFor(12, 24))
+        assertEquals(0, Bookshelf.booksFor(0, 0))
+    }
+
+    @Test fun completeOnlyAtFullGraduation() {
+        assertTrue(Bookshelf.isComplete(20, 20))
+        assertTrue(Bookshelf.isComplete(24, 24))
+        assertFalse(Bookshelf.isComplete(19, 20))
+        assertFalse(Bookshelf.isComplete(0, 0))
+    }
+}
+
 class SessionDesignTest {
     private fun q(id: String, difficulty: Int) = Question(
         id, "敬語", QType.QUIZ, "p", listOf("a", "b", "c", "d"), 0,

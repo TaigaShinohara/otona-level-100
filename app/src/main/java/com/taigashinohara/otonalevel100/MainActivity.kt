@@ -22,7 +22,13 @@ import android.widget.TextView
 import kotlin.random.Random
 
 /**
- * Otona Level 100 v0.13.0.
+ * Otona Level 100 v0.14.0.
+ * v0.14.0: the home screen grows a bookshelf (concept D, chosen by the user
+ * from a 4-concept board): one shelf per category, books in the category
+ * colour fill in with the graduation ratio, empty slots stay as faint
+ * outlines, and a completed category's last book turns gold. It replaces
+ * the dots + mini bars (UX3-06) that showed the same data; percentages
+ * remain available in the card's content description.
  * v0.13.0: celebration release (user request: praise the user much more,
  * with every delightful reaction available). Correct answers get rotating
  * praise headlines and streak lines (Praise), a haptic tick, a soft
@@ -474,7 +480,22 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        mascotRow.addView(MascotView(this), LinearLayout.LayoutParams(dp(84), dp(96)))
+        // Growth (v0.14.0): the owl's form follows the level; from the
+        // branch level on, tapping it toggles the evolution-path choice.
+        val owlStage = OwlGrowth.stageForLevel(level)
+        val owlPath = store.evolutionPath
+        var evoCard: View? = null
+        val mascot = MascotView(this, owlStage, owlPath)
+        mascot.contentDescription = if (OwlGrowth.canBranch(level))
+            "フクロウ。現在の姿は${OwlGrowth.stageName(owlStage, owlPath)}。タップで進化の方向を選べます"
+        else "フクロウ。現在の姿は${OwlGrowth.stageName(owlStage, owlPath)}"
+        if (OwlGrowth.canBranch(level)) {
+            mascot.isClickable = true
+            mascot.setOnClickListener {
+                evoCard?.let { it.visibility = if (it.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
+            }
+        }
+        mascotRow.addView(mascot, LinearLayout.LayoutParams(dp(84), dp(96)))
         val bubble = label(cheer, sizeBody, pal.greenDark, bold = true).apply {
             background = GradientDrawable().apply {
                 cornerRadius = dp(16).toFloat(); setColor(Color.WHITE)
@@ -497,6 +518,14 @@ class MainActivity : Activity() {
         } else {
             panel.addView(label("あと正解 約 ${approxQuestionsLeft(xp)} 問 でレベルアップ", sizeBody, Color.WHITE))
         }
+        val nextOwl = OwlGrowth.nextStageLevel(level)
+        panel.addView(label(when {
+            owlStage >= 4 -> "フクロウ：${OwlGrowth.stageName(owlStage, owlPath)}（最終形）"
+            OwlGrowth.canBranch(level) && owlPath == OwlGrowth.PATH_NONE ->
+                "フクロウ：${OwlGrowth.stageName(owlStage, owlPath)}（タップで進化の方向を選べます）"
+            nextOwl != null -> "フクロウ：${OwlGrowth.stageName(owlStage, owlPath)}（Lv. $nextOwl で進化）"
+            else -> "フクロウ：${OwlGrowth.stageName(owlStage, owlPath)}"
+        }, sizeSmall, Color.WHITE))
         col.addView(panel)
 
         if (resumable && saved != null) {
@@ -519,50 +548,97 @@ class MainActivity : Activity() {
             col.addView(start, lp)
             if (doneToday) col.addView(label("今日の分は完了しています。おかわりは自由です", sizeSmall, grey))
         }
-        // Category balance (design v1.2 §1, UX3-06): tiny dots + mini bars
-        // only — a quiet read on where you stand, never competing with the
-        // level number above. Detail lives on the Categories tab.
-        val statesH = store.allStates()
-        val balRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
+        // Evolution-path choice (v0.14.0): appears at the branch level; it
+        // stays visible until a path is picked, then the mascot tap toggles
+        // it so the user can change their mind.
+        if (OwlGrowth.canBranch(level)) {
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(16), dp(14), dp(16), dp(14))
+                background = cardDrawable(dp(20).toFloat())
+            }
+            card.addView(label(
+                if (owlPath == OwlGrowth.PATH_NONE) "フクロウが進化のとき！ どっちに育てる？" else "進化の方向",
+                sizeHead, pal.textMain, bold = true))
+            val options = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            val previewStage = maxOf(3, owlStage)
+            listOf(
+                OwlGrowth.PATH_CUTE to "かわいく",
+                OwlGrowth.PATH_COOL to "かっこよく",
+            ).forEach { (pathOpt, name) ->
+                val selected = owlPath == pathOpt
+                val opt = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER
+                    setPadding(dp(8), dp(10), dp(8), dp(10))
+                    background = if (selected) accentDrawable(dp(16).toFloat(), pal.yellow) else cardDrawable(dp(16).toFloat())
+                    isClickable = true
+                    contentDescription = if (selected) "$name 進化（選択中）" else "$name 進化にする"
+                    setOnClickListener { store.evolutionPath = pathOpt; showScreen(0) }
+                }
+                opt.addView(MascotView(this, previewStage, pathOpt), LinearLayout.LayoutParams(dp(64), dp(72)))
+                opt.addView(label(if (selected) "$name（選択中）" else name, sizeBody, pal.textMain, bold = true))
+                val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                if (pathOpt == OwlGrowth.PATH_CUTE) lp.rightMargin = dp(10)
+                options.addView(opt, lp)
+            }
+            card.addView(options)
+            card.visibility = if (owlPath == OwlGrowth.PATH_NONE) View.VISIBLE else View.GONE
+            val clp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            clp.topMargin = dp(16)
+            col.addView(card, clp)
+            evoCard = card
         }
-        val balSummary = StringBuilder("カテゴリ別の卒業割合。")
+        // The bookshelf (v0.14.0, concept D chosen by the user; replaces the
+        // dots + mini bars of UX3-06, which showed the same data quietly):
+        // one shelf per category, books fill with the graduation ratio, a
+        // completed category earns a gold book. Detail lives on the
+        // Categories tab, percentages live in the content description.
+        val statesH = store.allStates()
+        val shelfCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            background = cardDrawable(dp(20).toFloat())
+        }
+        val shelfSummary = StringBuilder("ジャンルの本棚。カテゴリ別の卒業割合。")
+        var completedGenres = 0
+        val shelfRows = ArrayList<View>()
         Questions.categories.forEachIndexed { idx, cat ->
             val qs = Questions.all.filter { it.category == cat }
             val grad = qs.count { q -> statesH[q.id]?.let { ReviewLogic.isGraduated(it) } == true }
             val rate = if (qs.isEmpty()) 0 else grad * 100 / qs.size
-            balSummary.append("${cat.substringBefore("・")} ${rate}パーセント。")
+            shelfSummary.append("${cat.substringBefore("・")} ${rate}パーセント。")
+            if (Bookshelf.isComplete(grad, qs.size)) completedGenres++
             val accent = pal.categoryColors[idx % pal.categoryColors.size]
-            val cell = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER_HORIZONTAL
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
             }
-            val dot = View(this).apply { background = circleDrawable(accent) }
-            cell.addView(dot, LinearLayout.LayoutParams(dp(10), dp(10)))
-            val nameLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            nameLp.topMargin = dp(3)
-            cell.addView(label(cat.substringBefore("・"), sizeSmall, grey), nameLp)
-            val track = FrameLayout(this).apply {
-                background = GradientDrawable().apply {
-                    cornerRadius = dp(3).toFloat(); setColor(pal.track)
-                }
-            }
-            val fill = View(this).apply {
-                background = GradientDrawable().apply {
-                    cornerRadius = dp(3).toFloat(); setColor(accent)
-                }
-            }
-            track.addView(fill, FrameLayout.LayoutParams(dp(40) * rate / 100, dp(6)))
-            val tLp = LinearLayout.LayoutParams(dp(40), dp(6))
-            tLp.topMargin = dp(3)
-            cell.addView(track, tLp)
-            balRow.addView(cell, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            row.addView(label(cat.substringBefore("・"), sizeSmall, grey, bold = true),
+                LinearLayout.LayoutParams(dp(46), ViewGroup.LayoutParams.WRAP_CONTENT))
+            row.addView(
+                ShelfView(this, accent, Bookshelf.booksFor(grad, qs.size), Bookshelf.isComplete(grad, qs.size)),
+                LinearLayout.LayoutParams(0, dp(52), 1f)
+            )
+            shelfRows.add(row)
         }
-        balRow.contentDescription = balSummary.toString()
-        val balLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        balLp.topMargin = dp(20)
-        col.addView(balRow, balLp)
+        val shelfHead = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        shelfHead.addView(label("ジャンルの本棚", sizeBody, navy, bold = true),
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        shelfHead.addView(label("制覇 ${completedGenres}/5 ジャンル", sizeSmall, pal.yellowText, bold = true))
+        shelfCard.addView(shelfHead)
+        shelfRows.forEachIndexed { i, row ->
+            val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            if (i > 0) lp.topMargin = dp(6)
+            shelfCard.addView(row, lp)
+        }
+        shelfCard.contentDescription = shelfSummary.toString()
+        val shelfLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        shelfLp.topMargin = dp(20)
+        col.addView(shelfCard, shelfLp)
         col.addView(label("1セット5問・約1分。レベルは下がりません", sizeSmall, grey))
         return ScrollView(this).apply { addView(col) }
     }

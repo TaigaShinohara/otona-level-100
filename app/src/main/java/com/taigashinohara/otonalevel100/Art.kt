@@ -32,17 +32,122 @@ private val PINK = Color.rgb(0xFF, 0x86, 0xD0)
 private val PURPLE = Color.rgb(0xA5, 0x60, 0xF5)
 private val INK = Color.rgb(0x3C, 0x3C, 0x3C)
 
-/** The mascot: a round green owl, drawn from circles and simple paths. */
-class MascotView(context: Context) : View(context) {
+private val WOOD = Color.rgb(0x92, 0x6C, 0x42)
+private val WOOD_DARK = Color.rgb(0x74, 0x54, 0x30)
+private val GHOST = Color.rgb(0xC9, 0xCF, 0xD8)
+
+/**
+ * One bookshelf row (v0.14.0): books in the category colour fill the shelf
+ * as the category's graduation ratio grows; empty slots stay as faint
+ * outlines so the remaining room is visible, and a completed category's
+ * last book turns gold. Board is drawn last so book bottoms tuck behind it.
+ */
+class ShelfView(context: Context, private val bookColor: Int, private val books: Int, private val complete: Boolean) : View(context) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val w = width.toFloat()
         val h = height.toFloat()
+        if (w <= 0f || h <= 0f) return
+        val boardH = h * 0.20f
+        val boardTop = h - boardH
+        val slots = Bookshelf.BOOKS_PER_SHELF
+        val slotW = w / slots
+        for (i in 0 until slots) {
+            val cx = slotW * i + slotW / 2f
+            val frac = 0.68f + ((i * 29) % 4) * 0.08f
+            val bookH = (boardTop - h * 0.06f) * frac
+            // Upright-book proportions: clearly taller than wide, with air
+            // between neighbours (wide capsules read as pills, not books).
+            val bookW = min(slotW * 0.68f, bookH * 0.66f)
+            val rect = RectF(cx - bookW / 2f, boardTop - bookH, cx + bookW / 2f, boardTop + boardH * 0.3f)
+            if (i < books) {
+                val isGold = complete && i == books - 1
+                p.style = Paint.Style.FILL
+                p.color = if (isGold) ORANGE else bookColor
+                canvas.drawRoundRect(rect, bookW * 0.16f, bookW * 0.16f, p)
+                // A small band near the top of each spine.
+                p.color = Color.argb(70, 0, 0, 0)
+                canvas.drawRect(rect.left, rect.top + bookH * 0.16f, rect.right, rect.top + bookH * 0.24f, p)
+            } else {
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = maxOf(1.5f, h * 0.02f)
+                p.color = GHOST
+                canvas.drawRoundRect(rect, bookW * 0.16f, bookW * 0.16f, p)
+                p.style = Paint.Style.FILL
+            }
+        }
+        p.color = WOOD
+        canvas.drawRoundRect(RectF(0f, boardTop, w, h), boardH * 0.4f, boardH * 0.4f, p)
+        p.color = WOOD_DARK
+        canvas.drawRect(0f, boardTop, w, boardTop + boardH * 0.28f, p)
+    }
+}
+
+/**
+ * The mascot owl (v0.14.0: grows with the level — OwlGrowth). stage 0 is
+ * the egg, 1 the chick, 2 the young owl, 3-4 the branch forms: cute
+ * (rounder, ribbon, cheeks, flower) or cool (tall tufts, stern brows, gold
+ * scarf, emblem), with the plain adult as the undecided form.
+ */
+class MascotView(context: Context, private val stage: Int = 2, private val path: Int = 0) : View(context) {
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    private fun drawEgg(canvas: Canvas, w: Float, h: Float) {
         val cx = w / 2f
-        val bodyR = min(w, h) * 0.40f
-        val bodyCy = h * 0.54f
+        val u = min(w, h)
+        val eggR = u * 0.30f
+        val eggCy = h * 0.56f
+        // Egg first, nest strokes layered over its base.
+        p.color = Color.rgb(0xFF, 0xF8, 0xEC)
+        canvas.drawOval(RectF(cx - eggR * 0.82f, eggCy - eggR, cx + eggR * 0.82f, eggCy + eggR * 0.9f), p)
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = u * 0.02f
+        p.color = Color.rgb(0xCB, 0xB8, 0x96)
+        canvas.drawOval(RectF(cx - eggR * 0.82f, eggCy - eggR, cx + eggR * 0.82f, eggCy + eggR * 0.9f), p)
+        val crack = Path()
+        crack.moveTo(cx - eggR * 0.30f, eggCy - eggR * 0.52f)
+        crack.lineTo(cx - eggR * 0.10f, eggCy - eggR * 0.38f)
+        crack.lineTo(cx + eggR * 0.08f, eggCy - eggR * 0.54f)
+        crack.lineTo(cx + eggR * 0.28f, eggCy - eggR * 0.40f)
+        canvas.drawPath(crack, p)
+        p.strokeCap = Paint.Cap.ROUND
+        for (i in 0 until 3) {
+            p.color = if (i % 2 == 0) WOOD else WOOD_DARK
+            p.strokeWidth = u * 0.05f
+            val yy = eggCy + eggR * (0.52f + i * 0.17f)
+            canvas.drawLine(cx - eggR * 1.28f, yy, cx + eggR * 1.28f, yy - u * 0.02f, p)
+        }
+        p.style = Paint.Style.FILL
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val cx = w / 2f
+        if (stage <= 0) { drawEgg(canvas, w, h); return }
+        val stageScale = when { stage == 1 -> 0.66f; stage == 2 -> 0.9f; else -> 1f }
+        val bodyR = min(w, h) * 0.40f * stageScale
+        val bodyCy = if (stage == 1) h * 0.60f else h * 0.54f
+
+        // Cool path (stage 3+): extra tall, sharp tufts behind the usual ones.
+        if (path == OwlGrowth.PATH_COOL && stage >= 3) {
+            p.color = GREEN_DARK
+            val spike = Path()
+            spike.moveTo(cx - bodyR * 0.86f, bodyCy - bodyR * 0.55f)
+            spike.lineTo(cx - bodyR * 0.60f, bodyCy - bodyR * 1.12f)
+            spike.lineTo(cx - bodyR * 0.34f, bodyCy - bodyR * 0.52f)
+            spike.close()
+            canvas.drawPath(spike, p)
+            val spike2 = Path()
+            spike2.moveTo(cx + bodyR * 0.86f, bodyCy - bodyR * 0.55f)
+            spike2.lineTo(cx + bodyR * 0.60f, bodyCy - bodyR * 1.12f)
+            spike2.lineTo(cx + bodyR * 0.34f, bodyCy - bodyR * 0.52f)
+            spike2.close()
+            canvas.drawPath(spike2, p)
+        }
 
         // Ear tufts
         p.color = GREEN_DARK
@@ -78,10 +183,10 @@ class MascotView(context: Context) : View(context) {
         p.color = Color.rgb(0xF5, 0xED, 0xD8)
         canvas.drawOval(RectF(cx - bodyR * 0.52f, bodyCy + bodyR * 0.18f, cx + bodyR * 0.52f, bodyCy + bodyR * 0.98f), p)
 
-        // Eyes
+        // Eyes (bigger for the chick and the cute path)
         val eyeY = bodyCy - bodyR * 0.22f
         val eyeDx = bodyR * 0.38f
-        val eyeR = bodyR * 0.30f
+        val eyeR = bodyR * 0.30f * if (stage == 1 || path == OwlGrowth.PATH_CUTE) 1.18f else 1f
         p.color = Color.WHITE
         canvas.drawCircle(cx - eyeDx, eyeY, eyeR, p)
         canvas.drawCircle(cx + eyeDx, eyeY, eyeR, p)
@@ -105,6 +210,86 @@ class MascotView(context: Context) : View(context) {
         p.color = ORANGE
         canvas.drawOval(RectF(cx - bodyR * 0.48f, bodyCy + bodyR * 0.94f, cx - bodyR * 0.12f, bodyCy + bodyR * 1.10f), p)
         canvas.drawOval(RectF(cx + bodyR * 0.12f, bodyCy + bodyR * 0.94f, cx + bodyR * 0.48f, bodyCy + bodyR * 1.10f), p)
+
+        // Chick: a two-leaf sprout on the head.
+        if (stage == 1) {
+            p.color = Color.rgb(0x58, 0xA8, 0x5A)
+            canvas.drawOval(RectF(cx - bodyR * 0.30f, bodyCy - bodyR * 1.22f, cx - bodyR * 0.02f, bodyCy - bodyR * 0.98f), p)
+            canvas.drawOval(RectF(cx + bodyR * 0.02f, bodyCy - bodyR * 1.22f, cx + bodyR * 0.30f, bodyCy - bodyR * 0.98f), p)
+        }
+
+        // Cute path (stage 3+): pink cheeks and a ribbon; final form adds a
+        // flower and sparkles.
+        if (path == OwlGrowth.PATH_CUTE && stage >= 3) {
+            p.color = Color.argb(150, 0xFF, 0x86, 0xD0)
+            canvas.drawCircle(cx - bodyR * 0.68f, eyeY + bodyR * 0.36f, bodyR * 0.16f, p)
+            canvas.drawCircle(cx + bodyR * 0.68f, eyeY + bodyR * 0.36f, bodyR * 0.16f, p)
+            val rx = cx + bodyR * 0.52f
+            val ry = bodyCy - bodyR * 0.94f
+            p.color = PINK
+            val wing1 = Path()
+            wing1.moveTo(rx, ry); wing1.lineTo(rx - bodyR * 0.30f, ry - bodyR * 0.16f); wing1.lineTo(rx - bodyR * 0.30f, ry + bodyR * 0.16f); wing1.close()
+            canvas.drawPath(wing1, p)
+            val wing2 = Path()
+            wing2.moveTo(rx, ry); wing2.lineTo(rx + bodyR * 0.30f, ry - bodyR * 0.16f); wing2.lineTo(rx + bodyR * 0.30f, ry + bodyR * 0.16f); wing2.close()
+            canvas.drawPath(wing2, p)
+            p.color = Color.rgb(0xE0, 0x5B, 0xA8)
+            canvas.drawCircle(rx, ry, bodyR * 0.10f, p)
+            if (stage >= 4) {
+                val fx = cx - bodyR * 0.55f
+                val fy = bodyCy - bodyR * 0.97f
+                p.color = PURPLE
+                for (k in 0 until 5) {
+                    val a = Math.toRadians(-90.0 + k * 72.0)
+                    canvas.drawCircle(fx + (bodyR * 0.14f * cos(a)).toFloat(), fy + (bodyR * 0.14f * sin(a)).toFloat(), bodyR * 0.10f, p)
+                }
+                p.color = ORANGE
+                canvas.drawCircle(fx, fy, bodyR * 0.09f, p)
+                p.color = ORANGE
+                for (sx in floatArrayOf(cx - bodyR * 1.22f, cx + bodyR * 1.22f)) {
+                    val spark = Path()
+                    val sy = bodyCy - bodyR * 0.10f
+                    val sr = bodyR * 0.13f
+                    spark.moveTo(sx, sy - sr); spark.lineTo(sx + sr * 0.3f, sy - sr * 0.3f); spark.lineTo(sx + sr, sy)
+                    spark.lineTo(sx + sr * 0.3f, sy + sr * 0.3f); spark.lineTo(sx, sy + sr); spark.lineTo(sx - sr * 0.3f, sy + sr * 0.3f)
+                    spark.lineTo(sx - sr, sy); spark.lineTo(sx - sr * 0.3f, sy - sr * 0.3f); spark.close()
+                    canvas.drawPath(spark, p)
+                }
+            }
+        }
+
+        // Cool path (stage 3+): stern brows and a gold scarf following the
+        // body's curve; the final form adds a gold emblem on the belly.
+        if (path == OwlGrowth.PATH_COOL && stage >= 3) {
+            p.color = INK
+            p.style = Paint.Style.STROKE
+            p.strokeCap = Paint.Cap.ROUND
+            p.strokeWidth = bodyR * 0.09f
+            canvas.drawLine(cx - eyeDx - eyeR * 0.85f, eyeY - eyeR * 1.05f, cx - eyeDx + eyeR * 0.75f, eyeY - eyeR * 0.62f, p)
+            canvas.drawLine(cx + eyeDx + eyeR * 0.85f, eyeY - eyeR * 1.05f, cx + eyeDx - eyeR * 0.75f, eyeY - eyeR * 0.62f, p)
+            p.color = ORANGE
+            p.strokeWidth = bodyR * 0.20f
+            canvas.drawArc(RectF(cx - bodyR, bodyCy - bodyR, cx + bodyR, bodyCy + bodyR), 35f, 110f, false, p)
+            p.style = Paint.Style.FILL
+            p.color = ORANGE
+            canvas.drawCircle(cx + bodyR * 0.66f, bodyCy + bodyR * 0.80f, bodyR * 0.13f, p)
+            if (stage >= 4) {
+                p.color = ORANGE
+                canvas.drawCircle(cx, bodyCy + bodyR * 0.52f, bodyR * 0.21f, p)
+                p.color = Color.WHITE
+                val star = Path()
+                val scx = cx; val scy = bodyCy + bodyR * 0.52f; val sr2 = bodyR * 0.13f
+                for (i in 0 until 10) {
+                    val rad = if (i % 2 == 0) sr2 else sr2 * 0.45f
+                    val ang = Math.toRadians(-90.0 + i * 36.0)
+                    val x = scx + (rad * cos(ang)).toFloat()
+                    val y = scy + (rad * sin(ang)).toFloat()
+                    if (i == 0) star.moveTo(x, y) else star.lineTo(x, y)
+                }
+                star.close()
+                canvas.drawPath(star, p)
+            }
+        }
     }
 }
 

@@ -164,6 +164,71 @@ object Praise {
 }
 
 /**
+ * The mascot's growth (v0.14.0, concept B added by the user): stages follow
+ * the level (any category counts — just keep playing), and from the branch
+ * stage on, the user picks a cute or cool evolution path. Pure mapping,
+ * unit-testable; the drawing lives in Art.kt's MascotView.
+ */
+object OwlGrowth {
+    const val PATH_NONE = 0
+    const val PATH_CUTE = 1
+    const val PATH_COOL = 2
+
+    /** Level at which the evolution-path choice opens. */
+    const val BRANCH_LEVEL = 30
+
+    /** 0 egg / 1 chick / 2 young / 3 branch stage / 4 final form. */
+    fun stageForLevel(level: Int): Int = when {
+        level >= 60 -> 4
+        level >= BRANCH_LEVEL -> 3
+        level >= 15 -> 2
+        level >= 5 -> 1
+        else -> 0
+    }
+
+    fun canBranch(level: Int): Boolean = level >= BRANCH_LEVEL
+
+    /** Level at which the next stage arrives, or null at the final form. */
+    fun nextStageLevel(level: Int): Int? = when (stageForLevel(level)) {
+        0 -> 5
+        1 -> 15
+        2 -> BRANCH_LEVEL
+        3 -> 60
+        else -> null
+    }
+
+    fun stageName(stage: Int, path: Int): String = when (stage) {
+        0 -> "たまご"
+        1 -> "ヒナ"
+        2 -> "わかば"
+        3 -> when (path) {
+            PATH_CUTE -> "かわいいオトナ"
+            PATH_COOL -> "かっこいいオトナ"
+            else -> "オトナ"
+        }
+        else -> when (path) {
+            PATH_CUTE -> "まんまるオトナ"
+            PATH_COOL -> "りりしいオトナ"
+            else -> "立派なオトナ"
+        }
+    }
+}
+
+/**
+ * The home-screen bookshelf (v0.14.0, concept D chosen by the user): one
+ * shelf per category, books fill in with the graduation ratio, and a
+ * completed category earns a gold book. Pure math, unit-testable.
+ */
+object Bookshelf {
+    const val BOOKS_PER_SHELF = 10
+
+    fun booksFor(graduated: Int, total: Int): Int =
+        if (total <= 0) 0 else (graduated * BOOKS_PER_SHELF / total).coerceIn(0, BOOKS_PER_SHELF)
+
+    fun isComplete(graduated: Int, total: Int): Boolean = total > 0 && graduated >= total
+}
+
+/**
  * Daily-set design (design v1.3 §3.5): the difficulty mix per level band and
  * the wave ordering of a set. Pure functions so they are unit-testable.
  */

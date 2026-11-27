@@ -51,6 +51,8 @@ cd app
   com.taigashinohara.otonalevel100.LevelSystemTest \
   com.taigashinohara.otonalevel100.SessionDesignTest \
   com.taigashinohara.otonalevel100.PraiseTest \
+  com.taigashinohara.otonalevel100.BookshelfTest \
+  com.taigashinohara.otonalevel100.OwlGrowthTest \
   com.taigashinohara.otonalevel100.ReviewLogicTest \
   com.taigashinohara.otonalevel100.QuestionsTest \
   com.taigashinohara.otonalevel100.LocalDayTest \

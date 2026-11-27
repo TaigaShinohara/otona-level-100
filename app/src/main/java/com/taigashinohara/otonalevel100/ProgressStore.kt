@@ -43,6 +43,11 @@ class ProgressStore(context: Context) {
         get() = prefs.getInt("level_floor", 1)
         set(v) = prefs.edit().putInt("level_floor", v).apply()
 
+    /** Mascot evolution path (v0.14.0): 0 undecided / 1 cute / 2 cool. */
+    var evolutionPath: Int
+        get() = prefs.getInt("evolution_path", 0)
+        set(v) = prefs.edit().putInt("evolution_path", v).apply()
+
     fun stateFor(id: String): ReviewLogic.State? {
         val raw = prefs.getString("q_$id", null) ?: return null
         val parts = raw.split(",")
