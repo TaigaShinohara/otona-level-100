@@ -64,7 +64,7 @@ class ProgressStore(context: Context) {
     }
 
     fun allStates(): Map<String, ReviewLogic.State> =
-        Questions.all.mapNotNull { q -> stateFor(q.id)?.let { q.id to it } }.toMap()
+        Questions.pool.mapNotNull { q -> stateFor(q.id)?.let { q.id to it } }.toMap()
 
     // --- Session persistence (UX review IR-4: a session must survive rotation
     // and tab/back interruptions, so the result screen is always reachable). ---

@@ -19,6 +19,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import java.time.LocalDate
 import kotlin.random.Random
 
 /**
@@ -202,6 +203,9 @@ class MainActivity : Activity() {
             }
         }
     }
+
+    /** Seasonal accent (v0.15.0): the calendar card and the 季節 tag only. */
+    private val seasonAccent = Color.rgb(0xC2, 0x18, 0x5B)
 
     private val pal: Palette by lazy {
         Palette((resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES)
@@ -528,6 +532,39 @@ class MainActivity : Activity() {
         }, sizeSmall, Color.WHITE))
         col.addView(panel)
 
+        // Seasonal card (v0.15.0): shown only while a calendar event is
+        // active — the calendar supplies the reason to open the app, and
+        // outside the window the home is exactly as before. Facts only
+        // (docs/季節の常識_設計案.md: 盛らない・煽らない).
+        Seasonal.activeOn(LocalDate.ofEpochDay(today))?.let { (ev, window) ->
+            val seasonCard = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(16), dp(14), dp(16), dp(14))
+                background = cardDrawable(dp(20).toFloat())
+            }
+            val seasonHead = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            seasonHead.addView(label("今日は何の日", sizeHead, pal.textMain, bold = true))
+            val seasonChip = label("${ev.name} 〜${window.second.monthValue}/${window.second.dayOfMonth}",
+                sizeSmall, Color.WHITE, bold = true).apply {
+                background = accentDrawable(dp(12).toFloat(), seasonAccent)
+                setPadding(dp(10), dp(3), dp(10), dp(3))
+            }
+            val chipLp = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            chipLp.leftMargin = dp(10)
+            seasonHead.addView(seasonChip, chipLp)
+            seasonCard.addView(seasonHead)
+            seasonCard.addView(label(ev.note, sizeBody, pal.textMain))
+            seasonCard.addView(label("今日の5問に 季節の1問 入り", sizeSmall, seasonAccent, bold = true))
+            val slp = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            slp.topMargin = dp(16)
+            col.addView(seasonCard, slp)
+        }
+
         if (resumable && saved != null) {
             val resume = primaryButton("つづきから（${saved.index + 1}問目）") { resumeSavedSession() }
             val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(56))
@@ -730,9 +767,9 @@ class MainActivity : Activity() {
         val today = ProgressStore.today()
         val states = store.allStates()
         val picked: List<Question> = when (mode) {
-            1 -> Questions.all.filter { q -> states[q.id]?.let { ReviewLogic.isWeak(it) } == true }
+            1 -> Questions.pool.filter { q -> states[q.id]?.let { ReviewLogic.isWeak(it) } == true }
                 .shuffled().take(5)
-            2 -> Questions.all.filter { q ->
+            2 -> Questions.pool.filter { q ->
                 // Spot checks count as today's review too (v0.9.0 audit: the
                 // review screen and this session used to ignore them while the
                 // daily set included them).
@@ -761,7 +798,7 @@ class MainActivity : Activity() {
                 val list = mutableListOf<Question>()
                 // Review slots: regular due first-class, plus graduated spot
                 // checks whose day has come (IR2-2: 抜き打ち再登場).
-                val due = Questions.all.filter { q ->
+                val due = Questions.pool.filter { q ->
                     states[q.id]?.let { ReviewLogic.isDue(it, today) || ReviewLogic.isSpotCheckDue(it, today) } == true
                 }.shuffled()
                 val duePicked = due.take(2)
@@ -789,6 +826,26 @@ class MainActivity : Activity() {
                         // at all; append instead of only swapping the last slot
                         // (the wave ordering below decides the final position).
                         if (list.size >= 5) list[list.size - 1] = card else list += card
+                    }
+                }
+                // Seasonal slot (v0.15.0): while a calendar event is active,
+                // one new slot becomes a seasonal question — the calendar
+                // supplies the reason to learn it this week. Placed after the
+                // card guarantee so the swap never evicts the set's card.
+                Seasonal.activeOn(LocalDate.ofEpochDay(today))?.let { (ev, _) ->
+                    val inList = list.map { it.id }.toSet()
+                    val candidates = ev.questionIds.mapNotNull { Questions.byId(it) }
+                        .filter { it.id !in inList }
+                    val pick = candidates.firstOrNull { states[it.id] == null }
+                        ?: candidates.firstOrNull {
+                            states[it.id]?.let { s -> ReviewLogic.isGraduated(s) } != true
+                        }
+                    if (pick != null) {
+                        val dueIds0 = duePicked.map { it.id }.toSet()
+                        val idx = list.indices.lastOrNull { i ->
+                            list[i].id !in dueIds0 && list[i].type != QType.CARD
+                        }
+                        if (idx != null) list[idx] = pick else if (list.size < 5) list += pick
                     }
                 }
                 if (list.isEmpty()) {
@@ -841,6 +898,16 @@ class MainActivity : Activity() {
         val pillLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         pillLp.leftMargin = dp(8)
         headerRow.addView(catPill, pillLp)
+        // Seasonal tag (v0.15.0): this question arrived via the calendar slot.
+        if (Seasonal.eventOf(q.id) != null) {
+            val seasonPill = label("季節", sizeSmall, Color.WHITE, bold = true).apply {
+                background = accentDrawable(dp(12).toFloat(), seasonAccent)
+                setPadding(dp(10), dp(3), dp(10), dp(3))
+            }
+            val sLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            sLp.leftMargin = dp(6)
+            headerRow.addView(seasonPill, sLp)
+        }
         // UX3-03: the category is stated once, by the pill. The pictogram
         // disc that used to sit next to it only repeated the same category;
         // the pictograms live on as the canonical icons on the Categories tab.
@@ -1272,10 +1339,10 @@ class MainActivity : Activity() {
     private fun buildReview(): View {
         val today = ProgressStore.today()
         val states = store.allStates()
-        val due = Questions.all.filter { q ->
+        val due = Questions.pool.filter { q ->
             states[q.id]?.let { ReviewLogic.isDue(it, today) || ReviewLogic.isSpotCheckDue(it, today) } == true
         }
-        val weak = Questions.all.filter { q -> states[q.id]?.let { ReviewLogic.isWeak(it) } == true }
+        val weak = Questions.pool.filter { q -> states[q.id]?.let { ReviewLogic.isWeak(it) } == true }
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(20), dp(20), dp(20))

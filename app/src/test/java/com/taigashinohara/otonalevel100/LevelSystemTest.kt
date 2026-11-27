@@ -123,6 +123,47 @@ class OwlGrowthTest {
     }
 }
 
+class SeasonalTest {
+    private fun active(y: Int, m: Int, d: Int) = Seasonal.activeOn(java.time.LocalDate.of(y, m, d))?.first?.id
+
+    @Test fun windowsFollowTheCalendar() {
+        assertEquals("oseibo", active(2026, 11, 25))
+        assertEquals("oseibo", active(2026, 12, 10))
+        assertEquals("oseibo", active(2026, 12, 20))
+        assertEquals("nenmatsu", active(2026, 12, 21))
+        assertEquals("nenmatsu", active(2026, 12, 31))
+        assertEquals("nenmatsu", active(2027, 1, 5))
+        assertEquals("nenmatsu", active(2027, 1, 7))
+        // 2027 Coming-of-Age Day is Jan 11 (second Monday); window starts a week before.
+        assertEquals("seijin", active(2027, 1, 8))
+        assertEquals("seijin", active(2027, 1, 11))
+        assertEquals("setsubun", active(2027, 2, 2))
+        assertEquals("shinkoku", active(2027, 2, 20))
+        // Overlap: hinamatsuri (ends Mar 3) wins over shinkoku (ends Mar 15).
+        assertEquals("hinamatsuri", active(2027, 3, 1))
+        assertEquals("shinkoku", active(2027, 3, 10))
+        assertEquals(null, active(2027, 6, 1))
+        assertEquals(null, active(2027, 1, 20))
+    }
+
+    @Test fun seasonalPoolIsValidAndSeparate() {
+        assertEquals(24, Questions.seasonal.size)
+        assertEquals(104, Questions.all.size)
+        assertEquals(128, Questions.pool.size)
+        Questions.seasonal.forEach { q ->
+            assertEquals("q=${q.id}", 4, q.choices.size)
+            assertTrue("q=${q.id}", q.answerIndex in q.choices.indices)
+            assertTrue("q=${q.id}", q.category in Questions.categories)
+            assertTrue("q=${q.id}", Seasonal.eventOf(q.id) != null)
+        }
+        Seasonal.events.forEach { ev ->
+            assertEquals("ev=${ev.id}", 4, ev.questionIds.size)
+            ev.questionIds.forEach { id -> assertTrue("id=$id", Questions.byId(id) != null) }
+        }
+        assertEquals(Questions.pool.size, Questions.pool.map { it.id }.distinct().size)
+    }
+}
+
 class BookshelfTest {
     @Test fun booksFillWithGraduationRatio() {
         assertEquals(0, Bookshelf.booksFor(0, 20))
