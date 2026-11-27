@@ -131,12 +131,12 @@ class StarView(context: Context, private val filledColor: Int, private val fille
 }
 
 /** Scattered celebration confetti (seeded, so a redraw looks the same). */
-class ConfettiView(context: Context, seed: Int) : View(context) {
+class ConfettiView(context: Context, seed: Int, count: Int = 42) : View(context) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rnd = Random(seed)
     private val colors = intArrayOf(GREEN, YELLOW, BLUE, PINK, PURPLE, ORANGE)
     private data class Piece(val fx: Float, val fy: Float, val size: Float, val rot: Float, val color: Int, val shape: Int)
-    private val pieces = List(42) {
+    private val pieces = List(count) {
         Piece(rnd.nextFloat(), rnd.nextFloat(), 0.5f + rnd.nextFloat(), rnd.nextFloat() * 360f,
             colors[it % colors.size], it % 3)
     }

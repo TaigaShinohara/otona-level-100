@@ -67,6 +67,34 @@ class LevelSystemTest {
     }
 }
 
+class PraiseTest {
+    @Test fun correctPraiseRotatesAndCelebratesStreaks() {
+        assertEquals("すごい！", Praise.forCorrect(1, 0))
+        assertEquals("その調子！", Praise.forCorrect(1, 1))
+        assertTrue(Praise.forCorrect(2, 5).contains("2連続正解"))
+        assertTrue(Praise.forCorrect(3, 0).contains("3連続正解"))
+    }
+
+    @Test fun cardPraiseRotates() {
+        assertEquals("覚えてた！すごい！", Praise.forCard(0))
+        assertTrue(Praise.forCard(1).contains("思い出せた"))
+    }
+
+    @Test fun resultLineIsWarmAtEveryScore() {
+        assertEquals("全問正解！完璧な1セット！", Praise.resultLine(5, 5))
+        assertTrue(Praise.resultLine(4, 5).contains("あと1問"))
+        assertTrue(Praise.resultLine(3, 5).isNotBlank())
+        assertTrue(Praise.resultLine(1, 5).isNotBlank())
+        assertTrue(Praise.resultLine(0, 5).contains("伸びしろ"))
+    }
+
+    @Test fun confettiScalesWithScore() {
+        assertEquals(10, Praise.confettiPieces(0))
+        assertEquals(49, Praise.confettiPieces(5))
+        assertEquals(35, Praise.confettiPieces(3))
+    }
+}
+
 class SessionDesignTest {
     private fun q(id: String, difficulty: Int) = Question(
         id, "敬語", QType.QUIZ, "p", listOf("a", "b", "c", "d"), 0,

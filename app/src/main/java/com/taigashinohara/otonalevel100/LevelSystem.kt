@@ -130,6 +130,40 @@ object LocalDay {
 }
 
 /**
+ * Praise lines (v0.13.0, user request: celebrate the user much more).
+ * Pure selection logic so it is unit-testable; the wording always stays on
+ * the "never shame" side — even a low score gets a warm line.
+ */
+object Praise {
+    private val correctPool = listOf(
+        "すごい！", "その調子！", "さすが！", "バッチリ！", "完璧！", "いいね！", "やったね！"
+    )
+    private val cardPool = listOf(
+        "覚えてた！すごい！", "バッチリ思い出せた！", "しっかり記憶に残ってる！"
+    )
+
+    /** Praise for a correct quiz answer; consecutive streaks get their own line. */
+    fun forCorrect(streak: Int, pick: Int): String =
+        if (streak >= 2) "${streak}連続正解！絶好調！"
+        else correctPool[Math.floorMod(pick, correctPool.size)]
+
+    /** Praise for remembering a card. */
+    fun forCard(pick: Int): String = cardPool[Math.floorMod(pick, cardPool.size)]
+
+    /** Warm headline for the result screen, by score. Never shaming. */
+    fun resultLine(correct: Int, total: Int): String = when {
+        total > 0 && correct >= total -> "全問正解！完璧な1セット！"
+        correct == total - 1 && total >= 4 -> "あと1問で全問正解！すごい！"
+        correct >= 3 -> "よくできました！その調子！"
+        correct >= 1 -> "おつかれさま！間違えた問題は、また会える"
+        else -> "おつかれさま！間違いは伸びしろ。今日の分は完了"
+    }
+
+    /** Confetti amount scales with the score (UX3-09 follow-up in v0.13.0). */
+    fun confettiPieces(correct: Int): Int = if (correct <= 0) 10 else 14 + correct * 7
+}
+
+/**
  * Daily-set design (design v1.3 §3.5): the difficulty mix per level band and
  * the wave ordering of a set. Pure functions so they are unit-testable.
  */

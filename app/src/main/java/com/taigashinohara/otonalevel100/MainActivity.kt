@@ -22,7 +22,16 @@ import android.widget.TextView
 import kotlin.random.Random
 
 /**
- * Otona Level 100 v0.12.0.
+ * Otona Level 100 v0.13.0.
+ * v0.13.0: celebration release (user request: praise the user much more,
+ * with every delightful reaction available). Correct answers get rotating
+ * praise headlines and streak lines (Praise), a haptic tick, a soft
+ * synthesized chime, a bounce on the winning button, a pop-in banner and a
+ * popping "+N XP" label. Level-ups and perfect sets get a haptic fanfare
+ * and a rising chime. The result screen celebrates in words at every score,
+ * earned stars pop in one by one, the level-up pill pops, and the confetti
+ * amount scales with the score. Wrong answers deliberately get none of it.
+ * Adds the VIBRATE permission (the app's only permission).
  * v0.12.0: level design (design v1.3 §3.5) implemented. Every question now
  * carries a difficulty tag (1 easy / 2 normal / 3 hard; approved tagging
  * pass, 48/34/22). Daily new questions are picked by the level band's
@@ -917,7 +926,7 @@ class MainActivity : Activity() {
         applyAnswer(item.q, remembered)
         persistSession()
         judgeButtons.forEach { it.isEnabled = false; it.alpha = 0.5f }
-        renderAnswered(item, feedback, nextBtn, null, animateBar = true, xpBefore = xpBefore, miniBar = miniBar)
+        renderAnswered(item, feedback, nextBtn, null, animateBar = true, xpBefore = xpBefore, buttons = judgeButtons, miniBar = miniBar)
     }
 
     private fun renderAnswered(
@@ -926,6 +935,20 @@ class MainActivity : Activity() {
     ) {
         val q = item.q
         val correct = if (q.type == QType.CARD) sChosen == 1 else sChosen == item.answerIndex
+        // Celebration (v0.13.0): correct answers feel good — a bounce on the
+        // winning button, a haptic tick and a soft chime; a level-up earns
+        // the fanfare. Wrong answers get none of it (never a punishment).
+        if (correct && animateBar) {
+            val target = if (q.type == QType.CARD) buttons?.getOrNull(1) else buttons?.getOrNull(item.answerIndex)
+            if (target != null) bounce(target)
+            Haptics.tick(this)
+            if (currentLevel(store.xp) > currentLevel(xpBefore)) {
+                Haptics.fanfare(this)
+                Chime.levelUp()
+            } else {
+                Chime.correct()
+            }
+        }
         if (q.type != QType.CARD) {
             val btns = buttons ?: (scrollCol?.tag as? List<*>)?.filterIsInstance<Button>() ?: emptyList()
             btns.forEachIndexed { i, b ->
@@ -964,8 +987,16 @@ class MainActivity : Activity() {
             }
             miniBar.describe("レベル$levelNow。次のレベルまであと約${approxQuestionsLeft(store.xp)}問")
         }
-        showFeedback(item, correct, feedback)
+        showFeedback(item, correct, feedback, store.xp - xpBefore)
         nextBtn.visibility = View.VISIBLE
+    }
+
+    /** Small celebratory bounce (v0.13.0); skipped when motion is reduced. */
+    private fun bounce(view: View) {
+        if (reduceMotion()) return
+        view.animate().scaleX(1.07f).scaleY(1.07f).setDuration(110)
+            .withEndAction { view.animate().scaleX(1f).scaleY(1f).setDuration(170).start() }
+            .start()
     }
 
     private fun applyAnswer(q: Question, correct: Boolean) {
@@ -998,7 +1029,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showFeedback(item: SItem, correct: Boolean, feedback: LinearLayout) {
+    private fun showFeedback(item: SItem, correct: Boolean, feedback: LinearLayout, xpGain: Int = 0) {
         val q = item.q
         feedback.removeAllViews()
         feedback.visibility = View.VISIBLE
@@ -1009,9 +1040,30 @@ class MainActivity : Activity() {
             setColor(if (correct) pal.correctBg else pal.wrongBgC)
         }
         feedback.setPadding(dp(14), dp(10), dp(14), dp(10))
+        // The banner pops in (v0.13.0) — a tiny bit of theatre for the reveal.
+        if (!reduceMotion()) {
+            feedback.scaleX = 0.97f; feedback.scaleY = 0.97f; feedback.alpha = 0.5f
+            feedback.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(180).start()
+        }
         val answerText = if (q.type == QType.CARD) q.cardBack else item.choices[item.answerIndex]
-        feedback.addView(label(if (correct) "正解" else "正解は「$answerText」", sizeBody,
+        // Praise (v0.13.0): a correct answer is celebrated out loud, with the
+        // phrase rotating and streaks getting their own line.
+        val headline = when {
+            correct && q.type == QType.CARD -> Praise.forCard(store.totalAnswered)
+            correct -> "正解！ ${Praise.forCorrect(sStreak, store.totalAnswered)}"
+            else -> "正解は「$answerText」"
+        }
+        feedback.addView(label(headline, sizeBody,
             if (correct) pal.correctText else pal.wrongText, bold = true))
+        if (correct && xpGain > 0) {
+            val xpLabel = label("+${xpGain} XP", sizeBody, pal.yellowText, bold = true)
+            feedback.addView(xpLabel)
+            if (!reduceMotion()) {
+                xpLabel.scaleX = 0.6f; xpLabel.scaleY = 0.6f
+                xpLabel.animate().scaleX(1f).scaleY(1f).setDuration(240)
+                    .setInterpolator(android.view.animation.OvershootInterpolator(2.5f)).start()
+            }
+        }
         feedback.addView(label(q.explanation, sizeBody, pal.textMain, bodyLeading = true))
         feedback.addView(label("場面：${q.scene}", sizeSmall, grey))
         feedback.addView(label("出典：${q.source}", sizeSmall, grey))
@@ -1028,6 +1080,7 @@ class MainActivity : Activity() {
     // ---------- Result ----------
     private fun showResult() {
         inQuestionPhase = false
+        val justFinished = !sCounted
         if (!sCounted) {
             if (sMode == 0) {
                 store.sessionsDone += 1
@@ -1057,6 +1110,11 @@ class MainActivity : Activity() {
                 setPadding(dp(16), dp(8), dp(16), dp(8))
             }
             panel.addView(pill)
+            if (!reduceMotion()) {
+                pill.scaleX = 0.7f; pill.scaleY = 0.7f; pill.alpha = 0f
+                pill.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(320)
+                    .setInterpolator(android.view.animation.OvershootInterpolator(2f)).start()
+            }
             if (LevelSystem.titleForLevel(newLevel) != LevelSystem.titleForLevel(startLevel)) {
                 // Design v1.3 §3.5: a title change is a big milestone, so the
                 // new title gets its own moment under the pill.
@@ -1068,7 +1126,7 @@ class MainActivity : Activity() {
         }
         // Celebration (v0.5.0): confetti across the top of the panel, and a
         // star per question — filled for each correct answer.
-        val confetti = ConfettiView(this, seed = sStartXp + sCorrect * 31)
+        val confetti = ConfettiView(this, seed = sStartXp + sCorrect * 31, count = Praise.confettiPieces(sCorrect))
         val confettiLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52))
         confettiLp.bottomMargin = dp(4)
         panel.addView(confetti, confettiLp)
@@ -1082,11 +1140,26 @@ class MainActivity : Activity() {
             val sLp = LinearLayout.LayoutParams(dp(30), dp(30))
             sLp.leftMargin = dp(2); sLp.rightMargin = dp(2)
             starRow.addView(star, sLp)
+            // Earned stars pop in one by one (v0.13.0).
+            if (i < sCorrect && !reduceMotion()) {
+                star.scaleX = 0f; star.scaleY = 0f
+                star.animate().scaleX(1f).scaleY(1f).setStartDelay(i * 90L).setDuration(260)
+                    .setInterpolator(android.view.animation.OvershootInterpolator(2.5f)).start()
+            }
         }
         val starLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         starLp.topMargin = dp(6); starLp.bottomMargin = dp(2)
         panel.addView(starRow, starLp)
         panel.addView(label("+${sXp} XP", sizeBody, navy, bold = true))
+        // Praise headline (v0.13.0): the score is celebrated in words too,
+        // warmly at every score (Praise.resultLine never shames).
+        panel.addView(label(Praise.resultLine(sCorrect, sItems.size), sizeBody, pal.yellowText, bold = true))
+        // Fanfare for the big finishes (v0.13.0): a level-up or a perfect
+        // set, once, when the set has just been completed.
+        if (justFinished && (leveledUp || (sItems.isNotEmpty() && sCorrect >= sItems.size))) {
+            Haptics.fanfare(this)
+            Chime.levelUp()
+        }
         // UX3-08: on a level-up the gold pill above already carries
         // "Lv. N ・ title", so the plain label only appears otherwise.
         if (!leveledUp) {
