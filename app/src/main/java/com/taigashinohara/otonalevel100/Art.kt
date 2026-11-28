@@ -37,51 +37,114 @@ private val WOOD_DARK = Color.rgb(0x74, 0x54, 0x30)
 private val GHOST = Color.rgb(0xC9, 0xCF, 0xD8)
 
 /**
- * One bookshelf row (v0.14.0): books in the category colour fill the shelf
- * as the category's graduation ratio grows; empty slots stay as faint
- * outlines so the remaining room is visible, and a completed category's
- * last book turns gold. Board is drawn last so book bottoms tuck behind it.
+ * The owl's bookshelf scene (v0.16.0, replaces the ShelfView rows): the
+ * shelf is the character's background AND the progress display at once —
+ * five shelves (one per category) inside a wooden frame, drawn behind the
+ * owl in the home panel. Books fill with each category's graduation ratio;
+ * a completed category's last book turns gold. Craft details: varied book
+ * heights/widths (deterministic per slot), a spine highlight stripe and a
+ * top band on every filled book, one leaning book at the end of a partial
+ * run, recessed ghost silhouettes for empty slots, boards with a top
+ * highlight and a drop shadow, and side posts so it reads as one unit.
  */
-class ShelfView(context: Context, private val bookColor: Int, private val books: Int, private val complete: Boolean) : View(context) {
+class ShelfSceneView(
+    context: Context,
+    private val booksPerGenre: IntArray,
+    private val completePerGenre: BooleanArray,
+    private val colorsPerGenre: IntArray,
+    private val dark: Boolean,
+) : View(context) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val gold = Color.rgb(0xC9, 0xA8, 0x6A)
+
+    private fun drawBook(canvas: Canvas, rect: RectF, color: Int, goldBook: Boolean) {
+        p.style = Paint.Style.FILL
+        p.color = color
+        val r = rect.width() * 0.18f
+        canvas.drawRoundRect(rect, r, r, p)
+        // Spine highlight stripe (left) — the light catching the spine edge.
+        p.color = Color.argb(52, 255, 255, 255)
+        canvas.drawRect(rect.left + rect.width() * 0.14f, rect.top + rect.height() * 0.05f,
+            rect.left + rect.width() * 0.26f, rect.bottom - rect.height() * 0.05f, p)
+        // Band near the top of the spine.
+        p.color = if (goldBook) Color.argb(130, 255, 255, 255) else Color.argb(64, 0, 0, 0)
+        canvas.drawRect(rect.left + rect.width() * 0.08f, rect.top + rect.height() * 0.16f,
+            rect.right - rect.width() * 0.08f, rect.top + rect.height() * 0.24f, p)
+        // Bottom shade so the book sits into the shelf.
+        p.color = Color.argb(34, 0, 0, 0)
+        canvas.drawRect(rect.left, rect.bottom - rect.height() * 0.12f, rect.right, rect.bottom, p)
+    }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val w = width.toFloat()
         val h = height.toFloat()
         if (w <= 0f || h <= 0f) return
-        val boardH = h * 0.20f
-        val boardTop = h - boardH
-        val slots = Bookshelf.BOOKS_PER_SHELF
-        val slotW = w / slots
-        for (i in 0 until slots) {
-            val cx = slotW * i + slotW / 2f
-            val frac = 0.68f + ((i * 29) % 4) * 0.08f
-            val bookH = (boardTop - h * 0.06f) * frac
-            // Upright-book proportions: clearly taller than wide, with air
-            // between neighbours (wide capsules read as pills, not books).
-            val bookW = min(slotW * 0.68f, bookH * 0.66f)
-            val rect = RectF(cx - bookW / 2f, boardTop - bookH, cx + bookW / 2f, boardTop + boardH * 0.3f)
-            if (i < books) {
-                val isGold = complete && i == books - 1
-                p.style = Paint.Style.FILL
-                p.color = if (isGold) ORANGE else bookColor
-                canvas.drawRoundRect(rect, bookW * 0.16f, bookW * 0.16f, p)
-                // A small band near the top of each spine.
-                p.color = Color.argb(70, 0, 0, 0)
-                canvas.drawRect(rect.left, rect.top + bookH * 0.16f, rect.right, rect.top + bookH * 0.24f, p)
-            } else {
-                p.style = Paint.Style.STROKE
-                p.strokeWidth = maxOf(1.5f, h * 0.02f)
-                p.color = GHOST
-                canvas.drawRoundRect(rect, bookW * 0.16f, bookW * 0.16f, p)
-                p.style = Paint.Style.FILL
+        val density = resources.displayMetrics.density
+        val postW = 6f * density
+        val rows = booksPerGenre.size
+        val rowH = h / rows
+        val boardT = maxOf(4f * density, rowH * 0.15f)
+        val innerL = postW
+        val innerR = w - postW
+        val slotW = (innerR - innerL) / Bookshelf.BOOKS_PER_SHELF
+
+        for (g in 0 until rows) {
+            val rowBottom = rowH * (g + 1)
+            val boardTop = rowBottom - boardT
+            val bookZoneH = boardTop - rowH * g - 2f * density
+            val books = booksPerGenre[g]
+            val complete = completePerGenre[g]
+            for (i in 0 until Bookshelf.BOOKS_PER_SHELF) {
+                val cx = innerL + slotW * i + slotW / 2f
+                val varH = ((g * 31 + i * 17) % 10) / 10f
+                val varW = ((g * 13 + i * 29) % 10) / 10f
+                val bookH = bookZoneH * (0.82f + 0.18f * varH)
+                val bookW = slotW * (0.58f + 0.12f * varW)
+                val rect = RectF(cx - bookW / 2f, boardTop - bookH, cx + bookW / 2f, boardTop + boardT * 0.3f)
+                if (i < books) {
+                    val isGold = complete && i == books - 1
+                    val leans = i == books - 1 && books in 1..8
+                    if (leans) {
+                        canvas.save()
+                        canvas.rotate(-8f, rect.left, boardTop)
+                        drawBook(canvas, rect, if (isGold) gold else colorsPerGenre[g], isGold)
+                        canvas.restore()
+                    } else {
+                        drawBook(canvas, rect, if (isGold) gold else colorsPerGenre[g], isGold)
+                    }
+                } else {
+                    // Empty slot: a soft silhouette. The panel is midnight
+                    // in both themes, so the treatment is always light-based:
+                    // a faint fill plus a slightly stronger rim — visible as
+                    // "room to grow" without the old white-capsule loudness.
+                    p.style = Paint.Style.FILL
+                    p.color = Color.argb(16, 255, 255, 255)
+                    canvas.drawRoundRect(rect, rect.width() * 0.18f, rect.width() * 0.18f, p)
+                    p.style = Paint.Style.STROKE
+                    p.strokeWidth = 1.2f * density
+                    p.color = Color.argb(52, 255, 255, 255)
+                    canvas.drawRoundRect(rect, rect.width() * 0.18f, rect.width() * 0.18f, p)
+                    p.style = Paint.Style.FILL
+                }
             }
+            // Board: shadow first, then the board, then its top highlight.
+            p.color = Color.argb(70, 0, 0, 0)
+            canvas.drawRect(innerL - 2f, rowBottom - 1f, innerR + 2f, rowBottom + 2.5f * density, p)
+            p.color = WOOD
+            canvas.drawRect(innerL - 2f, boardTop, innerR + 2f, rowBottom, p)
+            p.color = Color.argb(56, 255, 255, 255)
+            canvas.drawRect(innerL - 2f, boardTop, innerR + 2f, boardTop + 1.2f * density, p)
+            p.color = WOOD_DARK
+            canvas.drawRect(innerL - 2f, rowBottom - boardT * 0.3f, innerR + 2f, rowBottom, p)
         }
-        p.color = WOOD
-        canvas.drawRoundRect(RectF(0f, boardTop, w, h), boardH * 0.4f, boardH * 0.4f, p)
+        // Side posts: the frame that makes five boards one bookshelf.
         p.color = WOOD_DARK
-        canvas.drawRect(0f, boardTop, w, boardTop + boardH * 0.28f, p)
+        canvas.drawRect(0f, 0f, postW, h, p)
+        canvas.drawRect(w - postW, 0f, w, h, p)
+        p.color = Color.argb(44, 255, 255, 255)
+        canvas.drawRect(postW - 1.2f * density, 0f, postW, h, p)
+        canvas.drawRect(w - postW, 0f, w - postW + 1.2f * density, h, p)
     }
 }
 

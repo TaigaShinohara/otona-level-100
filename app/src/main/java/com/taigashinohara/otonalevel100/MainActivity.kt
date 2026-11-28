@@ -480,37 +480,22 @@ class MainActivity : Activity() {
             "「知らないと恥ずかしい」を1つ減らそう", "スキマ時間でレベルアップ！",
             "無理なく、楽しくいこう")
         val cheer = cheers[(today % cheers.size).toInt()]
-        val mascotRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
         // Growth (v0.14.0): the owl's form follows the level; from the
         // branch level on, tapping it toggles the evolution-path choice.
+        // v0.16.0: the owl lives in the bookshelf scene at the panel's foot
+        // (the shelf is its background); the header keeps only its bubble.
+        // The app-name line retired here (minimal pass: the user knows
+        // which app they opened; it carried no decision).
         val owlStage = OwlGrowth.stageForLevel(level)
         val owlPath = store.evolutionPath
         var evoCard: View? = null
-        val mascot = MascotView(this, owlStage, owlPath)
-        mascot.contentDescription = if (OwlGrowth.canBranch(level))
-            "フクロウ。現在の姿は${OwlGrowth.stageName(owlStage, owlPath)}。タップで進化の方向を選べます"
-        else "フクロウ。現在の姿は${OwlGrowth.stageName(owlStage, owlPath)}"
-        if (OwlGrowth.canBranch(level)) {
-            mascot.isClickable = true
-            mascot.setOnClickListener {
-                evoCard?.let { it.visibility = if (it.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
-            }
-        }
-        mascotRow.addView(mascot, LinearLayout.LayoutParams(dp(84), dp(96)))
         val bubble = label(cheer, sizeBody, pal.greenDark, bold = true).apply {
             background = GradientDrawable().apply {
                 cornerRadius = dp(16).toFloat(); setColor(Color.WHITE)
             }
             setPadding(dp(14), dp(10), dp(14), dp(10))
         }
-        val bubbleLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        bubbleLp.leftMargin = dp(12)
-        mascotRow.addView(bubble, bubbleLp)
-        panel.addView(mascotRow)
-        panel.addView(label("オトナレベル100", sizeBody, Color.WHITE, bold = true))
+        panel.addView(bubble)
         panel.addView(label("Lv. $level", sizeHero, Color.WHITE, bold = true))
         panel.addView(label(LevelSystem.titleForLevel(level), sizeHead, Color.WHITE, bold = true))
         val bar = LevelBar(fillTop = pal.yellow, fillBottom = pal.yellow, trackColor = pal.greenDark)
@@ -530,6 +515,52 @@ class MainActivity : Activity() {
             nextOwl != null -> "フクロウ：${OwlGrowth.stageName(owlStage, owlPath)}（Lv. $nextOwl で進化）"
             else -> "フクロウ：${OwlGrowth.stageName(owlStage, owlPath)}"
         }, sizeSmall, Color.WHITE))
+
+        // Bookshelf scene (v0.16.0): the shelf is the owl's background AND
+        // the progress display — five shelves inside the panel, books fill
+        // with each genre's graduation ratio, and the owl stands on the
+        // bottom shelf. The labelled card version retired here (minimal
+        // pass: same data, shown once, as a picture); exact numbers live
+        // on the Categories tab, the summary in the content description.
+        val statesH = store.allStates()
+        val shelfSummary = StringBuilder("フクロウの本棚。カテゴリ別の卒業割合。")
+        val booksArr = IntArray(Questions.categories.size)
+        val completeArr = BooleanArray(Questions.categories.size)
+        val colorArr = IntArray(Questions.categories.size)
+        Questions.categories.forEachIndexed { idx, cat ->
+            val qs = Questions.all.filter { it.category == cat }
+            val grad = qs.count { q -> statesH[q.id]?.let { ReviewLogic.isGraduated(it) } == true }
+            val rate = if (qs.isEmpty()) 0 else grad * 100 / qs.size
+            shelfSummary.append("${cat.substringBefore("・")} ${rate}パーセント。")
+            booksArr[idx] = Bookshelf.booksFor(grad, qs.size)
+            completeArr[idx] = Bookshelf.isComplete(grad, qs.size)
+            colorArr[idx] = pal.categoryColors[idx % pal.categoryColors.size]
+        }
+        val darkNow = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+        val scene = FrameLayout(this)
+        val shelfScene = ShelfSceneView(this, booksArr, completeArr, colorArr, darkNow)
+        shelfScene.contentDescription = shelfSummary.toString()
+        scene.addView(shelfScene, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        val sceneOwl = MascotView(this, owlStage, owlPath)
+        sceneOwl.contentDescription = if (OwlGrowth.canBranch(level))
+            "フクロウ。現在の姿は${OwlGrowth.stageName(owlStage, owlPath)}。タップで進化の方向を選べます"
+        else "フクロウ。現在の姿は${OwlGrowth.stageName(owlStage, owlPath)}"
+        if (OwlGrowth.canBranch(level)) {
+            sceneOwl.isClickable = true
+            sceneOwl.setOnClickListener {
+                evoCard?.let { it.visibility = if (it.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
+            }
+        }
+        val owlLp = FrameLayout.LayoutParams(dp(76), dp(86))
+        owlLp.gravity = Gravity.BOTTOM or Gravity.RIGHT
+        owlLp.rightMargin = dp(14)
+        owlLp.bottomMargin = dp(3)
+        scene.addView(sceneOwl, owlLp)
+        val sceneLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(184))
+        sceneLp.topMargin = dp(14)
+        panel.addView(scene, sceneLp)
         col.addView(panel)
 
         // Seasonal card (v0.15.0): shown only while a calendar event is
@@ -626,57 +657,6 @@ class MainActivity : Activity() {
             col.addView(card, clp)
             evoCard = card
         }
-        // The bookshelf (v0.14.0, concept D chosen by the user; replaces the
-        // dots + mini bars of UX3-06, which showed the same data quietly):
-        // one shelf per category, books fill with the graduation ratio, a
-        // completed category earns a gold book. Detail lives on the
-        // Categories tab, percentages live in the content description.
-        val statesH = store.allStates()
-        val shelfCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(14), dp(16), dp(14))
-            background = cardDrawable(dp(20).toFloat())
-        }
-        val shelfSummary = StringBuilder("ジャンルの本棚。カテゴリ別の卒業割合。")
-        var completedGenres = 0
-        val shelfRows = ArrayList<View>()
-        Questions.categories.forEachIndexed { idx, cat ->
-            val qs = Questions.all.filter { it.category == cat }
-            val grad = qs.count { q -> statesH[q.id]?.let { ReviewLogic.isGraduated(it) } == true }
-            val rate = if (qs.isEmpty()) 0 else grad * 100 / qs.size
-            shelfSummary.append("${cat.substringBefore("・")} ${rate}パーセント。")
-            if (Bookshelf.isComplete(grad, qs.size)) completedGenres++
-            val accent = pal.categoryColors[idx % pal.categoryColors.size]
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-            }
-            row.addView(label(cat.substringBefore("・"), sizeSmall, grey, bold = true),
-                LinearLayout.LayoutParams(dp(46), ViewGroup.LayoutParams.WRAP_CONTENT))
-            row.addView(
-                ShelfView(this, accent, Bookshelf.booksFor(grad, qs.size), Bookshelf.isComplete(grad, qs.size)),
-                LinearLayout.LayoutParams(0, dp(52), 1f)
-            )
-            shelfRows.add(row)
-        }
-        val shelfHead = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        shelfHead.addView(label("ジャンルの本棚", sizeBody, navy, bold = true),
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        shelfHead.addView(label("制覇 ${completedGenres}/5 ジャンル", sizeSmall, pal.yellowText, bold = true))
-        shelfCard.addView(shelfHead)
-        shelfRows.forEachIndexed { i, row ->
-            val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            if (i > 0) lp.topMargin = dp(6)
-            shelfCard.addView(row, lp)
-        }
-        shelfCard.contentDescription = shelfSummary.toString()
-        val shelfLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        shelfLp.topMargin = dp(20)
-        col.addView(shelfCard, shelfLp)
-        col.addView(label("1セット5問・約1分。レベルは下がりません", sizeSmall, grey))
         return ScrollView(this).apply { addView(col) }
     }
 
@@ -1410,7 +1390,8 @@ class MainActivity : Activity() {
             setPadding(dp(20), dp(20), dp(20), dp(20))
         }
         col.addView(label("カテゴリ", sizeHead, navy, bold = true))
-        col.addView(label("ジャンルをタップすると、そのジャンルだけで挑戦できます", sizeSmall, grey))
+        // Minimal pass (v0.16.0): the how-to line retired — each row's
+        // 「挑戦」 pill already says the row is tappable.
         Questions.categories.forEachIndexed { idx, cat ->
             val qs = Questions.all.filter { it.category == cat }
             val graduated = qs.count { q -> states[q.id]?.let { ReviewLogic.isGraduated(it) } == true }
@@ -1467,10 +1448,9 @@ class MainActivity : Activity() {
             lp.topMargin = dp(12)
             col.addView(box, lp)
         }
-        val totalGraduated = states.values.count { ReviewLogic.isGraduated(it) }
-        // UX3-10: totalAnswered counts every answer (repeats included), so
-        // the wording says 回答回数, not 解いた問題数.
-        col.addView(label("回答は通算 ${store.totalAnswered} 回 ・ 卒業は合計 ${totalGraduated} 問", sizeSmall, grey))
+        // Minimal pass (v0.16.0): the lifetime-stats footer retired — it
+        // was a standing statistic unrelated to this tab's job (picking a
+        // genre); overall progress lives on Home (level + bookshelf).
         return ScrollView(this).apply { addView(col) }
     }
 
