@@ -360,3 +360,26 @@ class QuestionsTest {
         }
     }
 }
+
+class SessionGrowthTest {
+    @Test fun growthReportsGraduationAndBookDeltas() {
+        val g = SessionGrowth.growth(
+            beforeGrads = listOf(0, 10, 20),
+            afterGrads = listOf(2, 10, 20),
+            totals = listOf(20, 20, 20)
+        )
+        assertEquals(2, g[0].gradDelta)
+        assertEquals(1, g[0].bookDelta) // 0 books -> 1 book (2/20)
+        assertEquals(0, g[1].gradDelta)
+        assertEquals(0, g[1].bookDelta)
+        assertEquals(0, g[2].gradDelta)
+        assertEquals(0, g[2].bookDelta)
+    }
+
+    @Test fun growthHandlesMissingAndZeroTotals() {
+        val g = SessionGrowth.growth(listOf(1), listOf(3), listOf(0, 20))
+        assertEquals(2, g[0].gradDelta)
+        assertEquals(0, g[0].bookDelta) // total 0 -> no books either side
+        assertEquals(0, g[1].gradDelta) // missing entries read as 0
+    }
+}

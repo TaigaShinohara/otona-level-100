@@ -304,3 +304,25 @@ object SessionDesign {
         return result
     }
 }
+
+/**
+ * Per-genre growth across one session (v0.17.0, for the result screen):
+ * how many questions graduated and how many bookshelf books appeared,
+ * per category, between the session-start snapshot and now. Books are a
+ * pure function of graduated counts (Bookshelf.booksFor), so the deltas
+ * always agree with the home bookshelf.
+ */
+object SessionGrowth {
+    data class GenreGrowth(val gradDelta: Int, val bookDelta: Int)
+
+    fun growth(beforeGrads: List<Int>, afterGrads: List<Int>, totals: List<Int>): List<GenreGrowth> =
+        totals.indices.map { i ->
+            val before = beforeGrads.getOrElse(i) { 0 }
+            val after = afterGrads.getOrElse(i) { 0 }
+            val total = totals.getOrElse(i) { 0 }
+            GenreGrowth(
+                gradDelta = after - before,
+                bookDelta = Bookshelf.booksFor(after, total) - Bookshelf.booksFor(before, total)
+            )
+        }
+}

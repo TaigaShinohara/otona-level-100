@@ -154,6 +154,10 @@ class MainActivity : Activity() {
         val wrongText: Int
         val chipBg: Int
         val chipText: Int
+        /** Gold text that stays readable on this theme's surfaces (v0.17.0). */
+        val goldText: Int
+        /** Sub text on the tinted feedback panel (v0.17.0). */
+        val feedbackSub: Int
         /** Bright per-category fills (unit colours). */
         val categoryColors: List<Int> = listOf(
             Color.rgb(0x1C, 0xB0, 0xF6), // 敬語 blue
@@ -176,11 +180,15 @@ class MainActivity : Activity() {
                 correctBg = Color.rgb(0x1D, 0x33, 0x27)
                 correctBorder = Color.rgb(0x58, 0xCC, 0x02)
                 correctText = Color.rgb(0x8C, 0xE9, 0x9A)
-                wrongBgC = Color.rgb(0x3D, 0x24, 0x28)
+                // v0.17.0: lifted from #3D2428 — the old fill read as a muddy
+                // brown mass on the dark background (user screenshot).
+                wrongBgC = Color.rgb(0x4A, 0x28, 0x30)
                 wrongBorder = Color.rgb(0xFF, 0x4B, 0x4B)
                 wrongText = Color.rgb(0xFF, 0xA8, 0xB8)
                 chipBg = Color.rgb(0x22, 0x35, 0x5E)
                 chipText = Color.rgb(0xC9, 0xA8, 0x6A)
+                goldText = Color.rgb(0xC9, 0xA8, 0x6A)
+                feedbackSub = Color.rgb(0xC7, 0xD0, 0xDC)
             } else {
                 bgTop = Color.WHITE
                 bgBottom = Color.rgb(0xF7, 0xF7, 0xF7)
@@ -200,6 +208,8 @@ class MainActivity : Activity() {
                 wrongText = Color.rgb(0xEA, 0x2B, 0x2B)
                 chipBg = Color.rgb(0xEC, 0xEE, 0xF3)
                 chipText = Color.rgb(0x8C, 0x6D, 0x1F)
+                goldText = Color.rgb(0x6B, 0x55, 0x18)
+                feedbackSub = Color.rgb(0x77, 0x77, 0x77)
             }
         }
     }
@@ -235,6 +245,10 @@ class MainActivity : Activity() {
     private var sAnswered = false
     private var sChosen = -1
     private var sCounted = false
+    // Result-screen growth (v0.17.0): per-item correctness and the
+    // per-category graduated counts as they were when the session started.
+    private var sResults: BooleanArray = BooleanArray(0)
+    private var sStartGrads: List<Int> = emptyList()
     private var inQuestionPhase = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -710,11 +724,20 @@ class MainActivity : Activity() {
         }
     }
 
+    /** Graduated count per category right now (Questions.categories order). */
+    private fun currentGradsSnapshot(): List<Int> {
+        val states = store.allStates()
+        return Questions.categories.map { cat ->
+            Questions.all.count { q -> q.category == cat && states[q.id]?.let { ReviewLogic.isGraduated(it) } == true }
+        }
+    }
+
     private fun persistSession() {
         store.saveSession(
             ProgressStore.SavedSession(
                 sItems.map { ProgressStore.SavedItem(it.q.id, it.order) },
-                sIndex, sCorrect, sXp, sStreak, sStartXp, sMode, sAnswered, sChosen, sCounted
+                sIndex, sCorrect, sXp, sStreak, sStartXp, sMode, sAnswered, sChosen, sCounted,
+                sStartGrads, sResults.joinToString("") { if (it) "1" else "0" }
             )
         )
     }
@@ -731,6 +754,11 @@ class MainActivity : Activity() {
         sIndex = saved.index; sCorrect = saved.correct; sXp = saved.xp
         sStreak = saved.streak; sStartXp = saved.startXp; sMode = saved.mode
         sAnswered = saved.answered; sChosen = saved.chosen; sCounted = saved.counted
+        // Saves from before v0.17.0 have no snapshot: fall back to "now", so
+        // the growth section simply reports no delta for a resumed session.
+        sStartGrads = if (saved.startGrads.size == Questions.categories.size) saved.startGrads
+            else currentGradsSnapshot()
+        sResults = BooleanArray(sItems.size) { i -> saved.results.getOrNull(i) == '1' }
     }
 
     private fun resumeSavedSession() {
@@ -845,6 +873,8 @@ class MainActivity : Activity() {
         sItems = buildItems(picked)
         sIndex = 0; sCorrect = 0; sXp = 0; sStreak = 0
         sStartXp = store.xp; sMode = mode; sAnswered = false; sChosen = -1; sCounted = false
+        sStartGrads = currentGradsSnapshot()
+        sResults = BooleanArray(sItems.size)
         persistSession()
         showQuestion()
     }
@@ -1132,6 +1162,7 @@ class MainActivity : Activity() {
             store.saveState(q.id, ReviewLogic.onAnswer(before ?: ReviewLogic.initial(today), correct, today))
         }
         store.totalAnswered += 1
+        if (sIndex in sResults.indices) sResults[sIndex] = correct
         if (correct) {
             store.totalCorrect += 1
             sCorrect += 1
@@ -1162,7 +1193,7 @@ class MainActivity : Activity() {
             cornerRadius = dp(16).toFloat()
             setColor(if (correct) pal.correctBg else pal.wrongBgC)
         }
-        feedback.setPadding(dp(14), dp(10), dp(14), dp(10))
+        feedback.setPadding(dp(16), dp(14), dp(16), dp(14))
         // The banner pops in (v0.13.0) — a tiny bit of theatre for the reveal.
         if (!reduceMotion()) {
             feedback.scaleX = 0.97f; feedback.scaleY = 0.97f; feedback.alpha = 0.5f
@@ -1179,7 +1210,7 @@ class MainActivity : Activity() {
         feedback.addView(label(headline, sizeBody,
             if (correct) pal.correctText else pal.wrongText, bold = true))
         if (correct && xpGain > 0) {
-            val xpLabel = label("+${xpGain} XP", sizeBody, pal.yellowText, bold = true)
+            val xpLabel = label("+${xpGain} XP", sizeBody, pal.goldText, bold = true)
             feedback.addView(xpLabel)
             if (!reduceMotion()) {
                 xpLabel.scaleX = 0.6f; xpLabel.scaleY = 0.6f
@@ -1188,8 +1219,8 @@ class MainActivity : Activity() {
             }
         }
         feedback.addView(label(q.explanation, sizeBody, pal.textMain, bodyLeading = true))
-        feedback.addView(label("場面：${q.scene}", sizeSmall, grey))
-        feedback.addView(label("出典：${q.source}", sizeSmall, grey))
+        feedback.addView(label("場面：${q.scene}", sizeSmall, pal.feedbackSub))
+        feedback.addView(label("出典：${q.source}", sizeSmall, pal.feedbackSub))
     }
 
     private fun goNext() {
@@ -1201,6 +1232,55 @@ class MainActivity : Activity() {
     }
 
     // ---------- Result ----------
+    /** A result-screen act: a small heading over a vertical stack. */
+    private fun resultSection(heading: String): LinearLayout {
+        val sec = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(0, dp(20), 0, 0)
+        }
+        sec.addView(label(heading, sizeSmall, grey, bold = true))
+        return sec
+    }
+
+    /** Fade-and-rise reveal for the result acts; instant when motion is reduced. */
+    private fun stageReveal(v: View, delayMs: Long) {
+        if (reduceMotion()) return
+        v.alpha = 0f
+        v.translationY = dp(12).toFloat()
+        v.animate().alpha(1f).translationY(0f).setStartDelay(delayMs).setDuration(320).start()
+    }
+
+    private fun genreGrowthRow(cat: String, idx: Int, correct: Int, total: Int, g: SessionGrowth.GenreGrowth): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(5), 0, dp(5))
+        }
+        val accent = pal.categoryColors[idx % pal.categoryColors.size]
+        val dot = View(this).apply { background = circleDrawable(accent) }
+        row.addView(dot, LinearLayout.LayoutParams(dp(12), dp(12)))
+        val nameLp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        nameLp.leftMargin = dp(10)
+        row.addView(label(cat.substringBefore("・"), sizeBody, pal.textMain, bold = true), nameLp)
+        row.addView(label("正解 $correct/$total", sizeSmall, grey))
+        fun pill(text: String, bg: Int, fg: Int) {
+            val p = label(text, sizeSmall, fg, bold = true).apply {
+                background = accentDrawable(dp(10).toFloat(), bg)
+                setPadding(dp(8), dp(2), dp(8), dp(2))
+            }
+            val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            lp.leftMargin = dp(8)
+            row.addView(p, lp)
+        }
+        if (g.gradDelta > 0) pill("卒業 +${g.gradDelta}", pal.yellow, pal.yellowText)
+        if (g.bookDelta > 0) pill("本 +${g.bookDelta}冊", pal.chipBg, pal.chipText)
+        row.contentDescription = "$cat。正解 $correct/$total。" +
+            (if (g.gradDelta > 0) "卒業が${g.gradDelta}問増えた。" else "") +
+            (if (g.bookDelta > 0) "本棚に本が${g.bookDelta}冊増えた。" else "")
+        return row
+    }
+
     private fun showResult() {
         inQuestionPhase = false
         val justFinished = !sCounted
@@ -1226,29 +1306,7 @@ class MainActivity : Activity() {
             setPadding(dp(24), dp(24), dp(24), dp(20))
             background = cardDrawable(dp(28).toFloat())
         }
-        if (leveledUp) {
-            // Yellow lives here only: the level-up pill (Duolingo achievement yellow).
-            val pill = label("レベルアップ！ Lv. $newLevel ・ ${LevelSystem.titleForLevel(newLevel)}", sizeBody, pal.yellowText, bold = true).apply {
-                background = accentDrawable(dp(20).toFloat(), pal.yellow)
-                setPadding(dp(16), dp(8), dp(16), dp(8))
-            }
-            panel.addView(pill)
-            if (!reduceMotion()) {
-                pill.scaleX = 0.7f; pill.scaleY = 0.7f; pill.alpha = 0f
-                pill.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(320)
-                    .setInterpolator(android.view.animation.OvershootInterpolator(2f)).start()
-            }
-            if (LevelSystem.titleForLevel(newLevel) != LevelSystem.titleForLevel(startLevel)) {
-                // Design v1.3 §3.5: a title change is a big milestone, so the
-                // new title gets its own moment under the pill.
-                val titleLine = label("称号が「${LevelSystem.titleForLevel(newLevel)}」に上がった！", sizeHead, pal.yellowText, bold = true)
-                val tLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                tLp.topMargin = dp(10)
-                panel.addView(titleLine, tLp)
-            }
-        }
-        // Celebration (v0.5.0): confetti across the top of the panel, and a
-        // star per question — filled for each correct answer.
+        // ---- Act 1: the score (the celebration as it was) ----
         val confetti = ConfettiView(this, seed = sStartXp + sCorrect * 31, count = Praise.confettiPieces(sCorrect))
         val confettiLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52))
         confettiLp.bottomMargin = dp(4)
@@ -1263,7 +1321,6 @@ class MainActivity : Activity() {
             val sLp = LinearLayout.LayoutParams(dp(30), dp(30))
             sLp.leftMargin = dp(2); sLp.rightMargin = dp(2)
             starRow.addView(star, sLp)
-            // Earned stars pop in one by one (v0.13.0).
             if (i < sCorrect && !reduceMotion()) {
                 star.scaleX = 0f; star.scaleY = 0f
                 star.animate().scaleX(1f).scaleY(1f).setStartDelay(i * 90L).setDuration(260)
@@ -1273,37 +1330,140 @@ class MainActivity : Activity() {
         val starLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         starLp.topMargin = dp(6); starLp.bottomMargin = dp(2)
         panel.addView(starRow, starLp)
-        panel.addView(label("+${sXp} XP", sizeBody, navy, bold = true))
-        // Praise headline (v0.13.0): the score is celebrated in words too,
-        // warmly at every score (Praise.resultLine never shames).
-        panel.addView(label(Praise.resultLine(sCorrect, sItems.size), sizeBody, pal.yellowText, bold = true))
+        panel.addView(label(Praise.resultLine(sCorrect, sItems.size), sizeBody, pal.goldText, bold = true))
         // Fanfare for the big finishes (v0.13.0): a level-up or a perfect
         // set, once, when the set has just been completed.
         if (justFinished && (leveledUp || (sItems.isNotEmpty() && sCorrect >= sItems.size))) {
             Haptics.fanfare(this)
             Chime.levelUp()
         }
-        // UX3-08: on a level-up the gold pill above already carries
-        // "Lv. N ・ title", so the plain label only appears otherwise.
+
+        // ---- Act 2: how each genre in this set grew (v0.17.0) ----
+        val genreSection = resultSection("ジャンルの伸び")
+        val afterGrads = currentGradsSnapshot()
+        val totals = Questions.categories.map { cat -> Questions.all.count { it.category == cat } }
+        val growth = SessionGrowth.growth(sStartGrads, afterGrads, totals)
+        Questions.categories.forEachIndexed { idx, cat ->
+            val inGenre = sItems.indices.filter { sItems[it].q.category == cat }
+            if (inGenre.isEmpty()) return@forEachIndexed
+            val correctInGenre = inGenre.count { sResults.getOrElse(it) { false } }
+            val row = genreGrowthRow(cat, idx, correctInGenre, inGenre.size,
+                growth.getOrElse(idx) { SessionGrowth.GenreGrowth(0, 0) })
+            genreSection.addView(row, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        panel.addView(genreSection, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        // ---- Act 3: the level (the level-up pill lives here now) ----
+        val levelSection = resultSection("レベル")
+        if (leveledUp) {
+            val pill = label("レベルアップ！ Lv. $newLevel ・ ${LevelSystem.titleForLevel(newLevel)}", sizeBody, pal.yellowText, bold = true).apply {
+                background = accentDrawable(dp(20).toFloat(), pal.yellow)
+                setPadding(dp(16), dp(8), dp(16), dp(8))
+            }
+            levelSection.addView(pill)
+            if (!reduceMotion()) {
+                pill.scaleX = 0.7f; pill.scaleY = 0.7f; pill.alpha = 0f
+                pill.animate().scaleX(1f).scaleY(1f).alpha(1f).setStartDelay(750).setDuration(320)
+                    .setInterpolator(android.view.animation.OvershootInterpolator(2f)).start()
+            }
+            if (LevelSystem.titleForLevel(newLevel) != LevelSystem.titleForLevel(startLevel)) {
+                val titleLine = label("称号が「${LevelSystem.titleForLevel(newLevel)}」に上がった！", sizeHead, pal.goldText, bold = true)
+                val tLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                tLp.topMargin = dp(10)
+                levelSection.addView(titleLine, tLp)
+            }
+        }
+        levelSection.addView(label("+${sXp} XP", sizeBody, navy, bold = true))
         if (!leveledUp) {
-            panel.addView(label("Lv. $newLevel ・ ${LevelSystem.titleForLevel(newLevel)}", sizeBody, navy, bold = true))
+            levelSection.addView(label("Lv. $newLevel ・ ${LevelSystem.titleForLevel(newLevel)}", sizeBody, navy, bold = true))
         }
         val bar = LevelBar()
         bar.describe("レベル$newLevel。次のレベルまであと約${approxQuestionsLeft(store.xp)}問")
-        panel.addView(bar.root)
-        if (leveledUp) {
-            bar.animate(LevelSystem.progressInLevel(sStartXp, store.levelFloor), 100)
-            bar.root.postDelayed({ bar.set(LevelSystem.progressInLevel(store.xp, store.levelFloor)) }, 480)
-        } else {
-            bar.animate(LevelSystem.progressInLevel(sStartXp, store.levelFloor), LevelSystem.progressInLevel(store.xp, store.levelFloor))
+        levelSection.addView(bar.root)
+        panel.addView(levelSection, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        // ---- Act 4: the owl — did it evolve? (v0.17.0) ----
+        val owlSection = resultSection("フクロウ")
+        val owlStageNow = OwlGrowth.stageForLevel(newLevel)
+        val owlStageStart = OwlGrowth.stageForLevel(startLevel)
+        val owlPath = store.evolutionPath
+        val evolved = owlStageNow > owlStageStart
+        val owlRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
-        panel.addView(label(
+        val owlView = MascotView(this, owlStageNow, owlPath)
+        owlView.contentDescription = "フクロウ。現在の姿は${OwlGrowth.stageName(owlStageNow, owlPath)}"
+        owlRow.addView(owlView, LinearLayout.LayoutParams(dp(72), dp(80)))
+        val owlTexts = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), 0, 0, 0)
+        }
+        val branchReady = OwlGrowth.canBranch(newLevel) && owlPath == OwlGrowth.PATH_NONE
+        when {
+            evolved -> {
+                owlTexts.addView(label("進化した！", sizeHead, pal.goldText, bold = true))
+                owlTexts.addView(label("${OwlGrowth.stageName(owlStageNow, owlPath)} になった", sizeBody, pal.textMain))
+                if (!reduceMotion()) {
+                    owlView.scaleX = 0.5f; owlView.scaleY = 0.5f
+                    owlView.animate().scaleX(1f).scaleY(1f).setStartDelay(1250).setDuration(380)
+                        .setInterpolator(android.view.animation.OvershootInterpolator(2.2f)).start()
+                }
+            }
+            branchReady -> {
+                owlTexts.addView(label("進化の方向を選べるよ", sizeBody, pal.textMain, bold = true))
+                owlTexts.addView(label("下の2つから選んでね", sizeSmall, grey))
+            }
+            else -> {
+                owlTexts.addView(label("フクロウ：${OwlGrowth.stageName(owlStageNow, owlPath)}", sizeBody, pal.textMain, bold = true))
+                val nextOwl = OwlGrowth.nextStageLevel(newLevel)
+                owlTexts.addView(label(
+                    if (nextOwl != null) "Lv. $nextOwl で進化" else "最終形", sizeSmall, grey))
+            }
+        }
+        owlRow.addView(owlTexts)
+        owlSection.addView(owlRow)
+        if (branchReady) {
+            val options = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            listOf(
+                OwlGrowth.PATH_CUTE to "かわいく",
+                OwlGrowth.PATH_COOL to "かっこよく",
+            ).forEach { (pathOpt, name) ->
+                val opt = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER
+                    setPadding(dp(8), dp(10), dp(8), dp(10))
+                    background = cardDrawable(dp(16).toFloat())
+                    isClickable = true
+                    contentDescription = "$name 進化にする"
+                    setOnClickListener { store.evolutionPath = pathOpt; showResult() }
+                }
+                opt.addView(MascotView(this, maxOf(3, owlStageNow), pathOpt), LinearLayout.LayoutParams(dp(56), dp(64)))
+                opt.addView(label(name, sizeBody, pal.textMain, bold = true))
+                val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                if (pathOpt == OwlGrowth.PATH_CUTE) lp.rightMargin = dp(10)
+                options.addView(opt, lp)
+            }
+            val oLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            oLp.topMargin = dp(10)
+            owlSection.addView(options, oLp)
+        }
+        panel.addView(owlSection, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        val closing = label(
             when (sMode) {
                 1 -> "苦手の復習、おつかれさま"
                 2 -> "今日の復習、おつかれさま"
                 3 -> "ジャンルの挑戦、おつかれさま"
                 else -> "今日の分は完了。よくできました"
-            }, sizeBody, grey))
+            }, sizeBody, grey)
+        val closingLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        closingLp.topMargin = dp(20)
+        panel.addView(closing, closingLp)
         col.addView(panel)
         val home = primaryButton("ホームへ") {
             store.clearSession()
@@ -1313,6 +1473,20 @@ class MainActivity : Activity() {
         lp.topMargin = dp(24)
         col.addView(home, lp)
         setContent(ScrollView(this).apply { addView(col) })
+
+        // The acts arrive in order — score, genres, level, owl — and the
+        // level bar animates as its act lands (all instant if motion is off).
+        stageReveal(genreSection, 350)
+        stageReveal(levelSection, 750)
+        stageReveal(owlSection, 1150)
+        panel.postDelayed({
+            if (leveledUp) {
+                bar.animate(LevelSystem.progressInLevel(sStartXp, store.levelFloor), 100)
+                bar.root.postDelayed({ bar.set(LevelSystem.progressInLevel(store.xp, store.levelFloor)) }, 480)
+            } else {
+                bar.animate(LevelSystem.progressInLevel(sStartXp, store.levelFloor), LevelSystem.progressInLevel(store.xp, store.levelFloor))
+            }
+        }, if (reduceMotion()) 0L else 750L)
     }
 
     // ---------- Review ----------

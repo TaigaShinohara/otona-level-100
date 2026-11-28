@@ -52,6 +52,7 @@ cd app
   com.taigashinohara.otonalevel100.SessionDesignTest \
   com.taigashinohara.otonalevel100.PraiseTest \
   com.taigashinohara.otonalevel100.BookshelfTest \
+  com.taigashinohara.otonalevel100.SessionGrowthTest \
   com.taigashinohara.otonalevel100.OwlGrowthTest \
   com.taigashinohara.otonalevel100.SeasonalTest \
   com.taigashinohara.otonalevel100.ReviewLogicTest \

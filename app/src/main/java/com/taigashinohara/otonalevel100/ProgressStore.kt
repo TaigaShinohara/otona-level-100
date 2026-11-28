@@ -82,7 +82,12 @@ class ProgressStore(context: Context) {
         val mode: Int, // 0 daily, 1 weak-only, 2 due-review
         val answered: Boolean,
         val chosen: Int, // shuffled choice index, or card: 1 remembered / 0 not; -1 none
-        val counted: Boolean
+        val counted: Boolean,
+        // Result-screen growth (v0.17.0): graduated count per category at
+        // session start (Questions.categories order), and per-item results
+        // as a "101.." string aligned with items.
+        val startGrads: List<Int> = emptyList(),
+        val results: String = ""
     )
 
     fun saveSession(s: SavedSession) {
@@ -92,6 +97,8 @@ class ProgressStore(context: Context) {
             .putInt("s_streak", s.streak).putInt("s_startXp", s.startXp).putInt("s_mode", s.mode)
             .putBoolean("s_answered", s.answered).putInt("s_chosen", s.chosen)
             .putBoolean("s_counted", s.counted)
+            .putString("s_startGrads", s.startGrads.joinToString(","))
+            .putString("s_results", s.results)
             .apply()
     }
 
@@ -111,7 +118,9 @@ class ProgressStore(context: Context) {
             prefs.getInt("s_index", 0), prefs.getInt("s_correct", 0), prefs.getInt("s_xp", 0),
             prefs.getInt("s_streak", 0), prefs.getInt("s_startXp", 0), prefs.getInt("s_mode", 0),
             prefs.getBoolean("s_answered", false), prefs.getInt("s_chosen", -1),
-            prefs.getBoolean("s_counted", false)
+            prefs.getBoolean("s_counted", false),
+            prefs.getString("s_startGrads", "")?.split(",")?.mapNotNull { it.toIntOrNull() } ?: emptyList(),
+            prefs.getString("s_results", "") ?: ""
         )
     }
 
@@ -120,6 +129,7 @@ class ProgressStore(context: Context) {
             .remove("s_items").remove("s_index").remove("s_correct").remove("s_xp")
             .remove("s_streak").remove("s_startXp").remove("s_mode")
             .remove("s_answered").remove("s_chosen").remove("s_counted")
+            .remove("s_startGrads").remove("s_results")
             .apply()
     }
 
