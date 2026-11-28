@@ -15,19 +15,21 @@ object LevelSystem {
     const val BEGINNER_LEVEL = 10
 
     /**
-     * XP needed to advance from [level] to level+1. Design v1.3 §3.5: the
-     * bands match the title bands and grow by a flat +20 per band (the old
-     * curve jumped 80 -> 120 at Lv50, which felt abruptly heavy). Total to
-     * Lv100 is 10,350 XP, about the same journey length as before (10,250).
+     * XP needed to advance from [level] to level+1. The bands match the
+     * title bands. v0.19.0 (user request): retuned so a steady daily player
+     * (one 5-question set a day, roughly 45 XP/day) reaches the top rank in
+     * about 3 months — the v1.3 curve (10,350 XP, ~8.5 months) made Lv.100
+     * feel out of sight. Total to Lv100 is now 4,140 XP. The floor rule in
+     * [levelForXp] keeps existing players from ever dropping.
      */
     fun xpToNext(level: Int): Int = when {
         level >= MAX_LEVEL -> 0
-        level < 10 -> 50
-        level < 25 -> 70
-        level < 45 -> 90
-        level < 65 -> 110
-        level < 85 -> 130
-        else -> 150
+        level < 10 -> 20
+        level < 25 -> 28
+        level < 45 -> 36
+        level < 65 -> 44
+        level < 85 -> 52
+        else -> 60
     }
 
     /** Cumulative XP at which [level] starts (level 1 starts at 0). */

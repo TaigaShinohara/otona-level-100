@@ -17,10 +17,10 @@ class LevelSystemTest {
     }
 
     @Test fun earlyLevelsAreFast() {
-        // Lv1 -> Lv2 needs 50 XP (about 5 new correct answers).
-        assertEquals(50, LevelSystem.xpToNext(1))
-        assertEquals(2, LevelSystem.levelForXp(50))
-        assertEquals(1, LevelSystem.levelForXp(49))
+        // Lv1 -> Lv2 needs 20 XP (v0.19.0 curve: about 2 correct answers).
+        assertEquals(20, LevelSystem.xpToNext(1))
+        assertEquals(2, LevelSystem.levelForXp(20))
+        assertEquals(1, LevelSystem.levelForXp(19))
     }
 
     @Test fun level100ReachableAndCapped() {
@@ -28,8 +28,8 @@ class LevelSystemTest {
         assertEquals(100, LevelSystem.levelForXp(total))
         assertEquals(100, LevelSystem.levelForXp(total + 100000))
         assertEquals("オトナの達人", LevelSystem.titleForLevel(100))
-        // Design target: roughly 10k XP to max (about 8-10 months at 5/day).
-        assertTrue("total=$total", total in 9000..13000)
+        // Design target (v0.19.0): about 3 months of daily play to max.
+        assertTrue("total=$total", total in 3800..4600)
     }
 
     @Test fun progressStaysInRange() {
@@ -46,28 +46,30 @@ class LevelSystemTest {
         assertEquals("教養あるオトナ", LevelSystem.titleForLevel(85))
     }
 
-    @Test fun smoothedCurveMatchesDesignV13() {
-        // Design v1.3 §3.5: bands match the title bands, +20 XP per band.
-        assertEquals(50, LevelSystem.xpToNext(1))
-        assertEquals(70, LevelSystem.xpToNext(10))
-        assertEquals(90, LevelSystem.xpToNext(25))
-        assertEquals(110, LevelSystem.xpToNext(45))
-        assertEquals(130, LevelSystem.xpToNext(65))
-        assertEquals(150, LevelSystem.xpToNext(85))
-        assertEquals(450, LevelSystem.cumulativeXp(10))
-        assertEquals(1500, LevelSystem.cumulativeXp(25))
-        assertEquals(3300, LevelSystem.cumulativeXp(45))
-        assertEquals(5500, LevelSystem.cumulativeXp(65))
-        assertEquals(8100, LevelSystem.cumulativeXp(85))
-        assertEquals(10350, LevelSystem.totalXpToMax())
+    @Test fun curveReachesMaxInAboutThreeMonths() {
+        // v0.19.0 (user request): the top rank in about 3 months of daily
+        // play. Bands still match the title bands; total 4,140 XP is about
+        // 92 days at ~45 XP/day (one daily set, most answers correct).
+        assertEquals(20, LevelSystem.xpToNext(1))
+        assertEquals(28, LevelSystem.xpToNext(10))
+        assertEquals(36, LevelSystem.xpToNext(25))
+        assertEquals(44, LevelSystem.xpToNext(45))
+        assertEquals(52, LevelSystem.xpToNext(65))
+        assertEquals(60, LevelSystem.xpToNext(85))
+        assertEquals(180, LevelSystem.cumulativeXp(10))
+        assertEquals(600, LevelSystem.cumulativeXp(25))
+        assertEquals(1320, LevelSystem.cumulativeXp(45))
+        assertEquals(2200, LevelSystem.cumulativeXp(65))
+        assertEquals(3240, LevelSystem.cumulativeXp(85))
+        assertEquals(4140, LevelSystem.totalXpToMax())
     }
 
     @Test fun levelFloorNeverLowersLevel() {
         // Migration rule (v1.3 §3.5): a reached level is kept as a floor.
         assertEquals(50, LevelSystem.levelForXp(0, floor = 50))
-        assertEquals(50, LevelSystem.levelForXp(3400, floor = 50))
-        assertTrue(LevelSystem.progressInLevel(3400, floor = 50) in 0..100)
-        assertTrue(LevelSystem.xpToNextLevel(3400, floor = 50) > 0)
+        assertEquals(50, LevelSystem.levelForXp(1000, floor = 50))
+        assertTrue(LevelSystem.progressInLevel(1000, floor = 50) in 0..100)
+        assertTrue(LevelSystem.xpToNextLevel(1000, floor = 50) > 0)
         assertEquals(100, LevelSystem.levelForXp(LevelSystem.totalXpToMax(), floor = 50))
     }
 }
@@ -162,8 +164,8 @@ class SeasonalTest {
 
     @Test fun seasonalPoolIsValidAndSeparate() {
         assertEquals(24, Questions.seasonal.size)
-        assertEquals(104, Questions.all.size)
-        assertEquals(128, Questions.pool.size)
+        assertEquals(204, Questions.all.size)
+        assertEquals(228, Questions.pool.size)
         Questions.seasonal.forEach { q ->
             assertEquals("q=${q.id}", 4, q.choices.size)
             assertTrue("q=${q.id}", q.answerIndex in q.choices.indices)
@@ -364,9 +366,9 @@ class LocalDayTest {
 
 class QuestionsTest {
     @Test fun poolHasFourPerCategoryAndOneCardMinimum() {
-        // v0.8.0: pool grew to 104 (keigo 24 incl. the pilot batch, others 20).
-        assertEquals(104, Questions.all.size)
-        val expected = mapOf("敬語" to 24, "マナー" to 20, "漢字" to 20, "標識・交通" to 20, "社会・お金" to 20)
+        // v0.19.0: pool grew to 204 (keigo 44, others 40).
+        assertEquals(204, Questions.all.size)
+        val expected = mapOf("敬語" to 44, "マナー" to 40, "漢字" to 40, "標識・交通" to 40, "社会・お金" to 40)
         Questions.categories.forEach { cat ->
             assertEquals("cat=$cat", expected[cat], Questions.all.count { it.category == cat })
         }
@@ -386,9 +388,9 @@ class QuestionsTest {
         // Design v1.3 §3.5: every question carries a tag (1 easy, 2 normal,
         // 3 hard); the counts are the approved tagging pass of 2026-11-26.
         assertTrue(Questions.all.all { it.difficulty in 1..3 })
-        assertEquals(48, Questions.all.count { it.difficulty == 1 })
-        assertEquals(34, Questions.all.count { it.difficulty == 2 })
-        assertEquals(22, Questions.all.count { it.difficulty == 3 })
+        assertEquals(83, Questions.all.count { it.difficulty == 1 })
+        assertEquals(70, Questions.all.count { it.difficulty == 2 })
+        assertEquals(51, Questions.all.count { it.difficulty == 3 })
     }
 
     @Test fun shuffledChoicesKeepTheSameCorrectAnswer() {
