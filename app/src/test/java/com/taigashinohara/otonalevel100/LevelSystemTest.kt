@@ -6,6 +6,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LevelSystemTest {
+    @Test fun reviewXpEqualsNewXp() {
+        // v0.18.0 (design review 案2): mastery must not pay less.
+        assertEquals(LevelSystem.XP_NEW_CORRECT, LevelSystem.XP_REVIEW_CORRECT)
+    }
+
     @Test fun level1AtZeroXp() {
         assertEquals(1, LevelSystem.levelForXp(0))
         assertEquals("見習いオトナ", LevelSystem.titleForLevel(1))
@@ -96,6 +101,15 @@ class PraiseTest {
 }
 
 class OwlGrowthTest {
+    @Test fun accessoriesArriveAt40And50() {
+        // v0.18.0 (案5): small rewards inside the Lv.30 -> 60 stretch.
+        assertEquals(0, OwlGrowth.accessoryFor(39))
+        assertEquals(1, OwlGrowth.accessoryFor(40))
+        assertEquals(1, OwlGrowth.accessoryFor(49))
+        assertEquals(2, OwlGrowth.accessoryFor(50))
+        assertEquals(2, OwlGrowth.accessoryFor(100))
+    }
+
     @Test fun stagesFollowLevel() {
         assertEquals(0, OwlGrowth.stageForLevel(1))
         assertEquals(0, OwlGrowth.stageForLevel(4))
@@ -227,6 +241,25 @@ class SessionDesignTest {
         assertEquals("r2", ordered[4].id) // closer = the other review
     }
 
+    @Test fun gentleMixForTheFirstWeek() {
+        // v0.18.0 (案7): the first session is all-easy, the rest of the
+        // first week stays easy-centred, then the level bands take over.
+        assertEquals(Triple(100, 0, 0), SessionDesign.difficultyMix(1, sessionsDone = 0))
+        assertEquals(Triple(85, 15, 0), SessionDesign.difficultyMix(50, sessionsDone = 3))
+        assertEquals(Triple(10, 50, 40), SessionDesign.difficultyMix(50, sessionsDone = 7))
+        assertEquals(Triple(70, 30, 0), SessionDesign.difficultyMix(1))
+    }
+
+    @Test fun wavePeakPrefersFreshOverHardReview() {
+        // v0.18.0 (案6): a difficulty-3 review the player keeps missing
+        // must not become the peak; the hardest NEW question takes slot 4.
+        val rHard = q("rh", 3); val rEasy = q("re", 1)
+        val f1 = q("f1", 1); val f2 = q("f2", 2); val f3 = q("f3", 1)
+        val ordered = SessionDesign.orderWave(listOf(rHard, rEasy), listOf(f1, f2, f3), kotlin.random.Random(7))
+        assertEquals(5, ordered.size)
+        assertEquals("f2", ordered[3].id)
+    }
+
     @Test fun waveWithoutReviewOpensAndClosesOnEasy() {
         val f1 = q("f1", 1); val f2 = q("f2", 1); val f3 = q("f3", 2); val f4 = q("f4", 2); val f5 = q("f5", 3)
         val ordered = SessionDesign.orderWave(emptyList(), listOf(f1, f2, f3, f4, f5), kotlin.random.Random(7))
@@ -238,12 +271,18 @@ class SessionDesignTest {
 }
 
 class ReviewLogicTest {
-    @Test fun wrongAnswerResetsToBox1DueTomorrow() {
+    @Test fun wrongAnswerDropsOneBoxDueTomorrow() {
+        // v0.18.0 (design review 案1): a miss costs one box, not the ladder.
         val s = ReviewLogic.onAnswer(ReviewLogic.State(3, 100L, 2), correct = false, today = 100L)
-        assertEquals(1, s.box)
+        assertEquals(2, s.box)
         assertEquals(101L, s.dueDay)
         assertEquals(0, s.streak)
         assertTrue(ReviewLogic.isWeak(s))
+        val s4 = ReviewLogic.onAnswer(ReviewLogic.State(4, 100L, 3), correct = false, today = 100L)
+        assertEquals(3, s4.box)
+        // Box 1 is the floor.
+        val s1 = ReviewLogic.onAnswer(ReviewLogic.State(1, 100L, 0), correct = false, today = 100L)
+        assertEquals(1, s1.box)
     }
 
     @Test fun correctAnswersWidenIntervals() {
@@ -294,12 +333,16 @@ class ReviewLogicTest {
         assertEquals(31L, s.dueDay) // box5 interval: +21 days
     }
 
-    @Test fun spotCheckWrongSendsBackToLearningCycle() {
+    @Test fun spotCheckMissKeepsGraduationAndAsksConfirmation() {
+        // v0.18.0 (design review 案1): a missed spot check never revokes
+        // graduation — it only reschedules a confirmation a few days out.
         val g = ReviewLogic.State(box = 5, dueDay = 10L, streak = 5)
-        val s = ReviewLogic.onAnswer(g, correct = false, today = 10L)
-        assertFalse(ReviewLogic.isGraduated(s))
-        assertEquals(1, s.box)
-        assertTrue(ReviewLogic.isDue(s, 11L))
+        val s = ReviewLogic.onSpotCheckMiss(g, today = 10L)
+        assertTrue(ReviewLogic.isGraduated(s))
+        assertEquals(5, s.box)
+        assertEquals(13L, s.dueDay)
+        assertFalse(ReviewLogic.isDue(s, 13L))
+        assertTrue(ReviewLogic.isSpotCheckDue(s, 13L))
     }
 }
 

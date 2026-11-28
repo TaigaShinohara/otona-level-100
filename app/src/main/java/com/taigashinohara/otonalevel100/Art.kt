@@ -154,7 +154,7 @@ class ShelfSceneView(
  * (rounder, ribbon, cheeks, flower) or cool (tall tufts, stern brows, gold
  * scarf, emblem), with the plain adult as the undecided form.
  */
-class MascotView(context: Context, private val stage: Int = 2, private val path: Int = 0) : View(context) {
+class MascotView(context: Context, private val stage: Int = 2, private val path: Int = 0, private val level: Int = 0) : View(context) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private fun drawEgg(canvas: Canvas, w: Float, h: Float) {
@@ -352,6 +352,48 @@ class MascotView(context: Context, private val stage: Int = 2, private val path:
                 star.close()
                 canvas.drawPath(star, p)
             }
+        }
+
+        // Milestone accessories (v0.18.0, design review 案5): a gold badge
+        // from Lv.40 and a small crown from Lv.50, on every path — small
+        // rewards inside the long Lv.30 -> 60 stretch.
+        val accessory = OwlGrowth.accessoryFor(level)
+        if (accessory >= 1 && stage >= 3) {
+            // Gold badge with a white star, low on the belly, offset so the
+            // cool final form's centre emblem keeps its place.
+            val bx = cx - bodyR * 0.30f
+            val by = bodyCy + bodyR * 0.55f
+            p.color = Color.rgb(0xC9, 0xA8, 0x6A)
+            canvas.drawCircle(bx, by, bodyR * 0.13f, p)
+            p.color = Color.WHITE
+            val bStar = Path()
+            val bR = bodyR * 0.08f
+            for (i in 0 until 10) {
+                val rad = if (i % 2 == 0) bR else bR * 0.45f
+                val ang = Math.toRadians(-90.0 + i * 36.0)
+                val x = bx + (rad * cos(ang)).toFloat()
+                val y = by + (rad * sin(ang)).toFloat()
+                if (i == 0) bStar.moveTo(x, y) else bStar.lineTo(x, y)
+            }
+            bStar.close()
+            canvas.drawPath(bStar, p)
+        }
+        if (accessory >= 2 && stage >= 3) {
+            // Small gold crown between the ear tufts.
+            val cw = bodyR * 0.34f
+            val cyTop = bodyCy - bodyR * 1.06f
+            val cyBase = bodyCy - bodyR * 0.86f
+            p.color = Color.rgb(0xC9, 0xA8, 0x6A)
+            val crown = Path()
+            crown.moveTo(cx - cw, cyBase)
+            crown.lineTo(cx - cw, cyTop + bodyR * 0.10f)
+            crown.lineTo(cx - cw * 0.5f, cyTop + bodyR * 0.02f)
+            crown.lineTo(cx, cyTop + bodyR * 0.12f)
+            crown.lineTo(cx + cw * 0.5f, cyTop + bodyR * 0.02f)
+            crown.lineTo(cx + cw, cyTop + bodyR * 0.10f)
+            crown.lineTo(cx + cw, cyBase)
+            crown.close()
+            canvas.drawPath(crown, p)
         }
     }
 }

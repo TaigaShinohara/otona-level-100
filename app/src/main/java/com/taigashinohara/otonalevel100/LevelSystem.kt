@@ -4,8 +4,15 @@ package com.taigashinohara.otonalevel100
 object LevelSystem {
     const val MAX_LEVEL = 100
     const val XP_NEW_CORRECT = 10
-    const val XP_REVIEW_CORRECT = 5
+    // v0.18.0 (design review 案2): review corrects earn the same as new
+    // ones — mastery must not slow the level down.
+    const val XP_REVIEW_CORRECT = 10
     const val XP_STREAK_BONUS = 5
+    // v0.18.0 (案7 序盤ブースト): while the player is a beginner (below
+    // BEGINNER_LEVEL), every counted correct answer earns a bonus so the
+    // first evolution arrives within the first few days.
+    const val XP_BEGINNER_BONUS = 5
+    const val BEGINNER_LEVEL = 10
 
     /**
      * XP needed to advance from [level] to level+1. Design v1.3 §3.5: the
@@ -85,9 +92,25 @@ object ReviewLogic {
             val newBox = (state.box + 1).coerceAtMost(GRADUATE_BOX)
             State(box = newBox, dueDay = today + (intervalDays[newBox] ?: 21), streak = state.streak + 1)
         } else {
-            State(box = 1, dueDay = today + 1, streak = 0)
+            // v0.18.0 (design review 案1): a miss costs ONE box, not the
+            // whole ladder — the question still returns tomorrow so the
+            // correction lands while it is fresh.
+            State(box = maxOf(1, state.box - 1), dueDay = today + 1, streak = 0)
         }
     }
+
+    /** Days until a missed spot check asks for confirmation (v0.18.0, 案1). */
+    const val SPOT_CONFIRM_DAYS = 3L
+
+    /**
+     * A graduated question missed its spot check (v0.18.0, 案1): graduation
+     * is KEPT — the bookshelf never loses a book — and the question simply
+     * comes back in a few days to confirm. Answering it correctly then
+     * resumes the normal +21-day spot-check cycle via [onAnswer]; missing
+     * again just reschedules the confirmation.
+     */
+    fun onSpotCheckMiss(state: State, today: Long): State =
+        state.copy(dueDay = today + SPOT_CONFIRM_DAYS)
 
     /**
      * Graduated after 3 consecutive correct answers AND reaching box 3
@@ -109,8 +132,9 @@ object ReviewLogic {
      * Spot check (design: 卒業後は「たまに抜き打ちで再登場」). A graduated
      * question becomes spot-check due when its dueDay arrives (21 days after
      * the last correct answer). Answered correctly it stays graduated and the
-     * next spot check is scheduled +21 days via [onAnswer]; answered wrong it
-     * drops back to box 1 and re-enters the normal learning cycle.
+     * next spot check is scheduled +21 days via [onAnswer]; answered wrong
+     * it stays graduated too (v0.18.0, 案1) and only asks for a confirmation
+     * a few days later — see [onSpotCheckMiss].
      */
     fun isSpotCheckDue(state: State, today: Long): Boolean =
         isGraduated(state) && state.dueDay <= today
@@ -197,6 +221,17 @@ object OwlGrowth {
         else -> null
     }
 
+    /**
+     * Mid-game milestone accessories (v0.18.0, design review 案5): the long
+     * Lv.30 -> 60 stretch gets small visible rewards — 0 none, 1 a gold
+     * badge (Lv.40), 2 badge + a small crown (Lv.50).
+     */
+    fun accessoryFor(level: Int): Int = when {
+        level >= 50 -> 2
+        level >= 40 -> 1
+        else -> 0
+    }
+
     fun stageName(stage: Int, path: Int): String = when (stage) {
         0 -> "たまご"
         1 -> "ヒナ"
@@ -234,8 +269,16 @@ object Bookshelf {
  */
 object SessionDesign {
 
-    /** Percent of new questions per difficulty (1 easy, 2 normal, 3 hard), by level band. */
-    fun difficultyMix(level: Int): Triple<Int, Int, Int> = when {
+    /**
+     * Percent of new questions per difficulty (1 easy, 2 normal, 3 hard).
+     * By level band normally; the first week is deliberately gentle
+     * (v0.18.0, 案7 序盤ブースト): the very first session is all-easy, and
+     * sessions 2-7 stay easy-centred whatever the level band says, so a new
+     * player meets success before difficulty.
+     */
+    fun difficultyMix(level: Int, sessionsDone: Int = -1): Triple<Int, Int, Int> = when {
+        sessionsDone == 0 -> Triple(100, 0, 0)
+        sessionsDone in 1..6 -> Triple(85, 15, 0)
         level < 10 -> Triple(70, 30, 0)
         level < 25 -> Triple(40, 50, 10)
         level < 45 -> Triple(20, 55, 25)
@@ -255,10 +298,11 @@ object SessionDesign {
         candidates: List<Question>,
         count: Int,
         level: Int,
-        random: kotlin.random.Random = kotlin.random.Random
+        random: kotlin.random.Random = kotlin.random.Random,
+        sessionsDone: Int = -1
     ): List<Question> {
         if (count <= 0 || candidates.isEmpty()) return emptyList()
-        val (easyPct, _, hardPct) = difficultyMix(level)
+        val (easyPct, _, hardPct) = difficultyMix(level, sessionsDone)
         val wants = mutableListOf<Int>()
         repeat(Math.round(count * easyPct / 100.0).toInt()) { wants += 1 }
         repeat(Math.round(count * hardPct / 100.0).toInt()) { wants += 3 }
@@ -290,7 +334,11 @@ object SessionDesign {
         val all = review + fresh
         if (all.size < 3) return all.shuffled(random)
         val remaining = all.toMutableList()
-        val peak = remaining.maxByOrNull { it.difficulty }!!
+        // v0.18.0 (design review 案6): the peak slot is for a NEW question.
+        // A difficulty-3 review (one the player keeps missing) must not
+        // become the set's climax — it stays in the safe middle instead.
+        val peak = (if (fresh.isNotEmpty()) fresh.maxByOrNull { it.difficulty } else null)
+            ?: remaining.maxByOrNull { it.difficulty }!!
         remaining.remove(peak)
         val opener = review.firstOrNull() ?: remaining.minByOrNull { it.difficulty }!!
         remaining.remove(opener)

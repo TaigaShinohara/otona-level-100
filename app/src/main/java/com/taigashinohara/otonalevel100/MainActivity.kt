@@ -489,11 +489,21 @@ class MainActivity : Activity() {
             background = accentDrawable(dp(24).toFloat(), pal.green)
         }
         // Mascot + speech bubble (v0.5.0): the owl cheers you on, one line a day.
-        val cheers = listOf(
-            "今日も5問、いってみよう！", "昨日の自分より、ちょっと大人に",
-            "「知らないと恥ずかしい」を1つ減らそう", "スキマ時間でレベルアップ！",
-            "無理なく、楽しくいこう")
-        val cheer = cheers[(today % cheers.size).toInt()]
+        // v0.18.0: the first days get a welcome (案7), and a returning player
+        // gets an おかえり before the daily rotation (案3) — coming back is
+        // the event worth celebrating, never a debt to mention.
+        val gapDays = if (store.lastDailyDay >= 0) today - store.lastDailyDay else 0L
+        val cheer = when {
+            store.sessionsDone == 0 -> "はじめまして！まずは気楽に5問、いってみよう"
+            gapDays >= 2 -> "おかえり！久しぶりだね。無理なくいこう"
+            store.sessionsDone in 1..6 -> listOf(
+                "よく来たね！今日も気楽にいこう", "はじめの1週間は、楽しむのが仕事だよ",
+                "間違えても大丈夫。段が1つ下がるだけ")[(today % 3).toInt()]
+            else -> listOf(
+                "今日も5問、いってみよう！", "昨日の自分より、ちょっと大人に",
+                "「知らないと恥ずかしい」を1つ減らそう", "スキマ時間でレベルアップ！",
+                "無理なく、楽しくいこう")[(today % 5).toInt()]
+        }
         // Growth (v0.14.0): the owl's form follows the level; from the
         // branch level on, tapping it toggles the evolution-path choice.
         // v0.16.0: the owl lives in the bookshelf scene at the panel's foot
@@ -557,7 +567,7 @@ class MainActivity : Activity() {
         shelfScene.contentDescription = shelfSummary.toString()
         scene.addView(shelfScene, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        val sceneOwl = MascotView(this, owlStage, owlPath)
+        val sceneOwl = MascotView(this, owlStage, owlPath, level)
         sceneOwl.contentDescription = if (OwlGrowth.canBranch(level))
             "フクロウ。現在の姿は${OwlGrowth.stageName(owlStage, owlPath)}。タップで進化の方向を選べます"
         else "フクロウ。現在の姿は${OwlGrowth.stageName(owlStage, owlPath)}"
@@ -629,6 +639,16 @@ class MainActivity : Activity() {
             lp.topMargin = dp(24)
             col.addView(start, lp)
             if (doneToday) col.addView(label("今日の分は完了しています。おかわりは自由です", sizeSmall, grey))
+            // v0.18.0 (design review 案4): a light 3-question set for low-
+            // energy days — a small door is better than a closed one.
+            val light = Button(this).apply {
+                text = if (doneToday) "かるく おかわり3問" else "かるく3問で はじめる"
+                textSize = sizeBody
+                setTextColor(grey)
+                background = null
+                setOnClickListener { startSession(0, size = 3) }
+            }
+            col.addView(light)
         }
         // Evolution-path choice (v0.14.0): appears at the branch level; it
         // stays visible until a path is picked, then the mascot tap toggles
@@ -658,7 +678,7 @@ class MainActivity : Activity() {
                     contentDescription = if (selected) "$name 進化（選択中）" else "$name 進化にする"
                     setOnClickListener { store.evolutionPath = pathOpt; showScreen(0) }
                 }
-                opt.addView(MascotView(this, previewStage, pathOpt), LinearLayout.LayoutParams(dp(64), dp(72)))
+                opt.addView(MascotView(this, previewStage, pathOpt, level), LinearLayout.LayoutParams(dp(64), dp(72)))
                 opt.addView(label(if (selected) "$name（選択中）" else name, sizeBody, pal.textMain, bold = true))
                 val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 if (pathOpt == OwlGrowth.PATH_CUTE) lp.rightMargin = dp(10)
@@ -771,9 +791,14 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun startSession(mode: Int, category: String? = null) {
+    private fun startSession(mode: Int, category: String? = null, size: Int = 5) {
         val today = ProgressStore.today()
         val states = store.allStates()
+        // v0.18.0 (design review 案3): a player returning after a gap gets
+        // one extra review slot so the backlog melts a little faster — and
+        // with review XP now equal to new XP (案2), coming back never pays
+        // less than staying away.
+        val returning = mode == 0 && store.lastDailyDay >= 0 && today - store.lastDailyDay >= 2
         val picked: List<Question> = when (mode) {
             1 -> Questions.pool.filter { q -> states[q.id]?.let { ReviewLogic.isWeak(it) } == true }
                 .shuffled().take(5)
@@ -809,20 +834,21 @@ class MainActivity : Activity() {
                 val due = Questions.pool.filter { q ->
                     states[q.id]?.let { ReviewLogic.isDue(it, today) || ReviewLogic.isSpotCheckDue(it, today) } == true
                 }.shuffled()
-                val duePicked = due.take(2)
+                val duePicked = due.take(minOf(if (returning) 3 else 2, size - 1))
                 list += duePicked
                 // New slots follow the level band's difficulty mix (design
                 // v1.3 §3.5 ①); the fill-up below stays difficulty-blind.
                 val freshPool = Questions.all.filter { it.id !in list.map { p -> p.id } && states[it.id] == null }
-                list += SessionDesign.pickNew(freshPool, 5 - list.size, currentLevel())
-                if (list.size < 5) {
+                list += SessionDesign.pickNew(freshPool, size - list.size, currentLevel(),
+                    sessionsDone = store.sessionsDone)
+                if (list.size < size) {
                     // Fill-up excludes graduated questions (IR2-2): graduation
                     // means leaving the pool, not just the review list.
                     val rest = Questions.all.filter { q ->
                         q.id !in list.map { p -> p.id } &&
                             states[q.id]?.let { ReviewLogic.isGraduated(it) } != true
                     }.shuffled()
-                    list += rest.take(5 - list.size)
+                    list += rest.take(size - list.size)
                 }
                 if (list.none { it.type == QType.CARD }) {
                     val card = Questions.all.firstOrNull { q ->
@@ -833,7 +859,7 @@ class MainActivity : Activity() {
                         // v0.9.0 audit: a short set used to end up with no card
                         // at all; append instead of only swapping the last slot
                         // (the wave ordering below decides the final position).
-                        if (list.size >= 5) list[list.size - 1] = card else list += card
+                        if (list.size >= size) list[list.size - 1] = card else list += card
                     }
                 }
                 // Seasonal slot (v0.15.0): while a calendar event is active,
@@ -853,13 +879,13 @@ class MainActivity : Activity() {
                         val idx = list.indices.lastOrNull { i ->
                             list[i].id !in dueIds0 && list[i].type != QType.CARD
                         }
-                        if (idx != null) list[idx] = pick else if (list.size < 5) list += pick
+                        if (idx != null) list[idx] = pick else if (list.size < size) list += pick
                     }
                 }
                 if (list.isEmpty()) {
                     // Everything graduated and nothing due: still let the user
                     // play a practice set instead of bouncing to another tab.
-                    list += Questions.all.shuffled().take(5)
+                    list += Questions.all.shuffled().take(size)
                 }
                 // Wave ordering (design v1.3 §3.5 ②): opener -> new -> peak at
                 // position 4 -> closer, instead of a plain shuffle.
@@ -1158,8 +1184,18 @@ class MainActivity : Activity() {
         val isReview = before != null && before.box > 0
         val dueOrNew = before == null || ReviewLogic.isDue(before, today) ||
             ReviewLogic.isSpotCheckDue(before, today)
-        if (!correct || dueOrNew) {
+        // v0.18.0 (design review 案1): missing a graduated question — a spot
+        // check, or one already awaiting confirmation — never revokes the
+        // graduation. It only asks for a confirmation a few days later, so
+        // the bookshelf never loses a book.
+        val spotMiss = !correct && before != null &&
+            (ReviewLogic.isGraduated(before) || store.isConfirm(q.id))
+        if (spotMiss) {
+            store.saveState(q.id, ReviewLogic.onSpotCheckMiss(before, today))
+            store.setConfirm(q.id, true)
+        } else if (!correct || dueOrNew) {
             store.saveState(q.id, ReviewLogic.onAnswer(before ?: ReviewLogic.initial(today), correct, today))
+            if (correct && store.isConfirm(q.id)) store.setConfirm(q.id, false)
         }
         store.totalAnswered += 1
         if (sIndex in sResults.indices) sResults[sIndex] = correct
@@ -1175,6 +1211,9 @@ class MainActivity : Activity() {
                 sStreak += 1
                 var gain = if (isReview) LevelSystem.XP_REVIEW_CORRECT else LevelSystem.XP_NEW_CORRECT
                 if (sStreak % 3 == 0) gain += LevelSystem.XP_STREAK_BONUS
+                // v0.18.0 (案7): beginner bonus — the first levels fly by,
+                // so the first evolution arrives within a few days.
+                if (currentLevel() < LevelSystem.BEGINNER_LEVEL) gain += LevelSystem.XP_BEGINNER_BONUS
                 sXp += gain
                 store.xp += gain
             }
@@ -1374,6 +1413,14 @@ class MainActivity : Activity() {
                 tLp.topMargin = dp(10)
                 levelSection.addView(titleLine, tLp)
             }
+            // v0.18.0 (案5): every 10th level is a milestone of its own, so
+            // the long stretches between titles never feel empty.
+            if (newLevel % 10 == 0) {
+                val ms = label("Lv. $newLevel 到達！大きな節目！", sizeBody, pal.goldText, bold = true)
+                val mLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                mLp.topMargin = dp(6)
+                levelSection.addView(ms, mLp)
+            }
         }
         levelSection.addView(label("+${sXp} XP", sizeBody, navy, bold = true))
         if (!leveledUp) {
@@ -1395,7 +1442,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val owlView = MascotView(this, owlStageNow, owlPath)
+        val owlView = MascotView(this, owlStageNow, owlPath, newLevel)
         owlView.contentDescription = "フクロウ。現在の姿は${OwlGrowth.stageName(owlStageNow, owlPath)}"
         owlRow.addView(owlView, LinearLayout.LayoutParams(dp(72), dp(80)))
         val owlTexts = LinearLayout(this).apply {
@@ -1424,6 +1471,11 @@ class MainActivity : Activity() {
                     if (nextOwl != null) "Lv. $nextOwl で進化" else "最終形", sizeSmall, grey))
             }
         }
+        // v0.18.0 (案5): crossing Lv.40 / Lv.50 in this set earns the owl a
+        // new accessory — say so here, where the owl is on stage.
+        if (OwlGrowth.accessoryFor(newLevel) > OwlGrowth.accessoryFor(startLevel)) {
+            owlTexts.addView(label("新しい飾りがついた！", sizeSmall, pal.goldText, bold = true))
+        }
         owlRow.addView(owlTexts)
         owlSection.addView(owlRow)
         if (branchReady) {
@@ -1441,7 +1493,7 @@ class MainActivity : Activity() {
                     contentDescription = "$name 進化にする"
                     setOnClickListener { store.evolutionPath = pathOpt; showResult() }
                 }
-                opt.addView(MascotView(this, maxOf(3, owlStageNow), pathOpt), LinearLayout.LayoutParams(dp(56), dp(64)))
+                opt.addView(MascotView(this, maxOf(3, owlStageNow), pathOpt, newLevel), LinearLayout.LayoutParams(dp(56), dp(64)))
                 opt.addView(label(name, sizeBody, pal.textMain, bold = true))
                 val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 if (pathOpt == OwlGrowth.PATH_CUTE) lp.rightMargin = dp(10)

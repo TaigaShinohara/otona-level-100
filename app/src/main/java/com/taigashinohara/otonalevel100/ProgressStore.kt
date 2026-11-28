@@ -63,6 +63,21 @@ class ProgressStore(context: Context) {
         prefs.edit().putString("q_$id", "${state.box},${state.dueDay},${state.streak}").apply()
     }
 
+    // --- Spot-check confirmations (v0.18.0, design review 案1): graduated
+    // questions that missed a spot check. They stay graduated (the shelf
+    // keeps its books); the flag only marks "awaiting a confirmation
+    // answer" so a repeat miss reschedules instead of demoting. ---
+    private fun confirmIdSet(): Set<String> =
+        prefs.getString("confirm_ids", "")?.split(",")?.filter { it.isNotEmpty() }?.toSet() ?: emptySet()
+
+    fun isConfirm(id: String): Boolean = confirmIdSet().contains(id)
+
+    fun setConfirm(id: String, on: Boolean) {
+        val set = confirmIdSet().toMutableSet()
+        if (on) set += id else set -= id
+        prefs.edit().putString("confirm_ids", set.joinToString(",")).apply()
+    }
+
     fun allStates(): Map<String, ReviewLogic.State> =
         Questions.pool.mapNotNull { q -> stateFor(q.id)?.let { q.id to it } }.toMap()
 
